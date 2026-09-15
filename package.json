@@ -1,0 +1,35 @@
+{
+  "name": "marketing-360",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "next lint",
+    "typecheck": "tsc --noEmit",
+    "db:migrate": "tsx scripts/migrate.ts",
+    "db:seed": "tsx scripts/seed.ts",
+    "setup": "npm run db:migrate && npm run db:seed"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.125.0",
+    "better-sqlite3": "^12.2.0",
+    "next": "^16.3.5",
+    "react": "^19.2.0",
+    "react-dom": "^19.2.0",
+    "zod": "^4.6.5"
+  },
+  "devDependencies": {
+    "@tailwindcss/postcss": "^4.1.13",
+    "@types/better-sqlite3": "^7.6.13",
+    "@types/node": "^22.15.3",
+    "@types/react": "^19.2.0",
+    "@types/react-dom": "^19.2.0",
+    "postcss": "^8.5.6",
+    "tailwindcss": "^4.1.13",
+    "tsx": "^4.20.0",
+    "typescript": "^5.9.2"
+  }
+}
