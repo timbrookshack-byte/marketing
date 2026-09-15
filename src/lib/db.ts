@@ -197,6 +197,87 @@ export function migrate(database: Database.Database): void {
       key   TEXT PRIMARY KEY,
       value TEXT NOT NULL
     );
+
+    /* ---------------------------------------------------- concept inspiration */
+
+    /* Brands we watch. Identifiers are per-source because no two ad libraries
+       agree on how an advertiser is named. */
+    CREATE TABLE IF NOT EXISTS competitors (
+      id          TEXT PRIMARY KEY,
+      name        TEXT NOT NULL,
+      domain      TEXT,
+      /* Free-text category used to judge whether a peer is really in our space. */
+      category    TEXT,
+      /* { meta: "pageId", tiktok: "advertiserName", linkedin: "companyId", ... } */
+      handles     TEXT NOT NULL DEFAULT '{}',
+      /* 'user' when added by hand, 'suggested' when proposed and not yet confirmed. */
+      origin      TEXT NOT NULL DEFAULT 'user',
+      notes       TEXT,
+      created_at  TEXT NOT NULL,
+      UNIQUE (name)
+    );
+
+    /*
+     * One row per creative seen in a public ad library.
+     *
+     * first_seen / last_seen are the load-bearing columns: we cannot observe a
+     * competitor's performance, so how long they have kept an ad running is the
+     * evidence that it works.
+     */
+    CREATE TABLE IF NOT EXISTS external_creatives (
+      id             TEXT PRIMARY KEY,
+      competitor_id  TEXT REFERENCES competitors(id) ON DELETE CASCADE,
+      source         TEXT NOT NULL,
+      platform       TEXT NOT NULL,
+      external_id    TEXT NOT NULL,
+      advertiser     TEXT NOT NULL,
+      headline       TEXT,
+      body           TEXT,
+      call_to_action TEXT,
+      format         TEXT,
+      landing_page   TEXT,
+      media_url      TEXT,
+      permalink      TEXT,
+      first_seen     TEXT,
+      last_seen      TEXT,
+      /* Still delivering as of the last refresh. */
+      is_live        INTEGER NOT NULL DEFAULT 0,
+      /* EU/UK DSA disclosures only; null everywhere else. */
+      reach_lower    INTEGER,
+      reach_upper    INTEGER,
+      countries      TEXT NOT NULL DEFAULT '[]',
+      /* Creatives that are near-duplicates share a variant_key. */
+      variant_key    TEXT,
+      raw            TEXT NOT NULL DEFAULT '{}',
+      fetched_at     TEXT NOT NULL,
+      UNIQUE (source, external_id)
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_external_competitor ON external_creatives(competitor_id);
+    CREATE INDEX IF NOT EXISTS idx_external_lastseen ON external_creatives(last_seen);
+
+    CREATE TABLE IF NOT EXISTS inspiration_runs (
+      id            TEXT PRIMARY KEY,
+      started_at    TEXT NOT NULL,
+      finished_at   TEXT,
+      source        TEXT NOT NULL,
+      competitor_id TEXT,
+      status        TEXT NOT NULL,
+      found         INTEGER NOT NULL DEFAULT 0,
+      error         TEXT
+    );
+
+    /* The output of an angle analysis: what rivals run, what we do not. */
+    CREATE TABLE IF NOT EXISTS angle_reports (
+      id          TEXT PRIMARY KEY,
+      created_at  TEXT NOT NULL,
+      market      TEXT,
+      summary     TEXT NOT NULL,
+      angles      TEXT NOT NULL DEFAULT '[]',
+      gaps        TEXT NOT NULL DEFAULT '[]',
+      concepts    TEXT NOT NULL DEFAULT '[]',
+      caveats     TEXT NOT NULL DEFAULT '[]'
+    );
   `);
 }
 

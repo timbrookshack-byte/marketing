@@ -19,3 +19,6 @@ console.log(
   `Seeded ${result.campaigns} campaigns, ${result.metricRows.toLocaleString()} metric rows and ` +
     `${result.orders.toLocaleString()} store orders across ${result.days} days.`,
 );
+console.log(
+  `Seeded ${result.competitors} competitors and ${result.competitorCreatives} competitor creatives.`,
+);

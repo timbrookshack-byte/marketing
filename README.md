@@ -44,10 +44,74 @@ around — guessing is how dashboards start lying.
 question. Each campaign gets a response curve, and budget is distributed so the *last* dollar
 earns the same everywhere.
 
+**Shows what rivals are running.** A concept-inspiration module that reads public ad libraries
+and scores what is probably working — see [Concept inspiration](#concept-inspiration) for why that
+is an inference rather than a measurement.
+
 **Adds judgement with Claude.** The model reads the computed findings, not raw rows. It ranks
 what matters, spots findings that share a root cause, says where it disagrees with a rule, and
 flags what makes the analysis untrustworthy. It also runs the creative workshop and answers
 free-form questions with tools over your own numbers.
+
+---
+
+## Concept inspiration
+
+**You cannot get a competitor's performance data.** There is no legal way to see another
+retailer's ROAS, CTR or conversion rate, and any tool claiming to show it is modelling, not
+measuring. This module does not pretend otherwise.
+
+What public ad libraries *do* expose is which ads are running and **for how long** — and that turns
+out to be enough, because it is behavioural rather than self-reported. A paid ad costs money every
+day it delivers, and advertisers cut losers within a week or two. An ad still live after three
+months has survived a renewed decision to keep funding it, every one of those days. Nobody builds
+six variants of a concept that flopped.
+
+So the module scores two signals: **longevity** (days between first and last delivery, still
+running or not) and **iteration** (how many near-duplicate variants of one concept exist). Both
+saturate on a log curve, so a year-old ad does not swamp the ranking.
+
+### What it costs you to be wrong about this
+
+Stated on the page itself, not buried here:
+
+1. A large brand can run an awareness ad for a year on a budget line that never had a return
+   target. Anything past ~300 days is flagged rather than trusted.
+2. Evergreen creative is sometimes just neglect.
+3. **Their economics are not yours.** A 70%-margin DTC brand sustains a cost per sale that would
+   bankrupt a 25%-margin retailer.
+
+A high score means "worth stealing the idea and testing", never "this will work".
+
+### Where the ads come from
+
+| Source | Official API | What you get | The catch |
+|---|---|---|---|
+| Meta Ad Library | Yes | Ad text, delivery dates, EU reach | `ad_type=ALL` returns commercial ads **only for EU/UK delivery**. Elsewhere it is political ads only. ~12-month retention |
+| TikTok Commercial Content | Yes | Ad text, delivery dates | Metadata only — no video files. Research-programme access, EU-first coverage |
+| LinkedIn Ad Library | Yes | Ad text, dates, thumbnails | B2B in practice. No reach figures |
+| Google Ads Transparency | **No** | — | No developer surface at all. Reachable only via a licensed provider on your own key |
+| Added by hand | n/a | Whatever you paste | Always works. No approval, any platform |
+
+**Nothing here scrapes.** Scraping breaks constantly, violates terms, and fails silently — which
+is the worst property a data source can have, because your analysis quietly gets thinner without
+saying so. The Google gap is covered by an adapter for providers you subscribe to yourself, and by
+the paste-it-in path.
+
+A source that is not configured reports itself as skipped, with the variable to set. A source that
+works but finds nothing says so, with its coverage limits. An empty grid is never ambiguous.
+
+### What it produces
+
+Creatives are clustered into **concepts** — five rewordings of one promise count as one concept
+iterated five times, not five ideas. Clustering compares word sets pairwise (Jaccard, 0.45
+threshold) rather than hashing each creative independently, because similarity is a property of a
+pair and cannot be baked into one item alone.
+
+Then Claude clusters both sides — rivals' creative and your own live ads — on the *promise being
+made*, and subtracts. The output is the angles your competitors run with real evidence behind them
+that **you do not run at all**, each with the honest reason it might not transfer, plus testable
+concepts that say explicitly how they differ from the ad that prompted them.
 
 ---
 
@@ -101,7 +165,12 @@ src/lib/
     metrics.ts    rollups, derived economics, order→campaign attribution
     diagnostics.ts the deterministic findings
     optimizer.ts  marginal-return budget reallocation
-  ai/             Claude: portfolio analysis, creative workshop, analyst chat
+  inspiration/
+    types.ts      the source interface — one file per ad library
+    traction.ts   longevity scoring and concept clustering
+    *-library.ts  Meta, TikTok, LinkedIn, licensed provider, hand-entered
+  ai/             Claude: portfolio analysis, creative workshop, analyst chat,
+                  competitor angle gaps
   sync.ts         orchestration and token refresh
   repo.ts         every read and write; the rest of the app never sees SQL
   db.ts           SQLite schema
@@ -144,6 +213,9 @@ Stated plainly so you can disagree with them on purpose:
    different, every "losing money" verdict changes. It is in the `settings` table.
 5. **One account per platform** at present. The OAuth callback takes the first visible ad
    account; multi-account selection is the obvious next step.
+6. **Competitor longevity is a proxy, not a measurement.** The reasoning and its three failure
+   modes are in [Concept inspiration](#concept-inspiration). It is the weakest evidence in the
+   product and is labelled as such everywhere it appears.
 
 ---
 
@@ -191,3 +263,8 @@ Demo connections never call out; they update locally and say so.
 | `npm run db:migrate` | Create or update the schema |
 | `npm run db:seed` | Load demo data (`-- --force` to regenerate) |
 | `npm run setup` | Both of the above |
+
+Demo data covers the inspiration module too: four fictional competitors whose creatives are built
+to exercise the scoring — a concept three brands have all kept live for months, one iterated into
+six variants, two that were cut inside three weeks, and a year-long brand film that shows why
+longevity alone is not proof of profit.

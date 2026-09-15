@@ -9,6 +9,7 @@ import {
   upsertOrders,
 } from "./repo";
 import { addDays, mulberry32, stableId, todayISO } from "./util";
+import { generateInspirationDemoData } from "./inspiration/demo";
 import type { CreativeFormat, MetricRow, PlatformId, SalesOrder } from "./types";
 
 /**
@@ -487,6 +488,8 @@ export function generateDemoData(options: SeedOptions = {}): {
   metricRows: number;
   orders: number;
   days: number;
+  competitors: number;
+  competitorCreatives: number;
 } {
   const days = options.days ?? 90;
   const random = mulberry32(options.seed ?? 20260915);
@@ -701,10 +704,16 @@ export function generateDemoData(options: SeedOptions = {}): {
     saveCredentials(connectionId, { apiKey: "demo" });
   }
 
+  // The competitive set is part of the same demo story: the gaps it surfaces are
+  // angles the demo account's own ads genuinely do not run.
+  const inspiration = generateInspirationDemoData();
+
   return {
     campaigns: campaigns.length,
     metricRows: metricRows.length,
     orders: orders.length,
     days,
+    competitors: inspiration.competitors,
+    competitorCreatives: inspiration.creatives,
   };
 }
