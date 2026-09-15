@@ -117,10 +117,32 @@ concepts that say explicitly how they differ from the ad that prompted them.
 
 ## Running it
 
+Needs **Node 20.9 or newer** (Next 16 requires it). `node -v` to check.
+
 ```bash
 npm install
 npm run setup      # create the database and load the demo account
 npm run dev        # http://localhost:3000
+```
+
+### On Windows
+
+Two things bite here, neither obvious from the error message they produce.
+
+**Do not keep the project inside OneDrive.** `node_modules` is tens of thousands of small files;
+OneDrive tries to sync every one of them, which makes installs crawl and causes intermittent
+`EPERM` and `EBUSY` failures when it locks a file mid-write. Clone somewhere outside the synced
+tree — `C:\dev\marketing` or similar. If you must keep it in OneDrive, right-click the folder and
+choose *Always keep on this device*, then exclude `node_modules` from sync.
+
+**If `npm install` fails building better-sqlite3**, it could not find a prebuilt binary for your
+Node version and fell back to compiling from source. Either install the
+[VS Build Tools](https://visualstudio.microsoft.com/visual-cpp-build-tools/) C++ workload, or —
+easier — switch to an LTS Node version that has prebuilds:
+
+```powershell
+nvm install 22
+nvm use 22
 ```
 
 `npm run setup` generates 90 days of realistic demo data across five channels and a store, so the

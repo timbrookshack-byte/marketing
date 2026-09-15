@@ -1,0 +1,7 @@
+# Normalise line endings so a Windows checkout does not show every file as
+# modified, and so shell scripts stay LF whatever the contributor's platform.
+* text=auto eol=lf
+
+*.png binary
+*.jpg binary
+*.ico binary
