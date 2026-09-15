@@ -7,8 +7,9 @@ import { stableId } from "../util";
  * Google Ads — REST interface to the Google Ads API.
  *
  * Two things make this connector different from the others:
- *  - every request needs a `developer-token` header in addition to OAuth, and a
- *    `login-customer-id` when the account is reached through an MCC;
+ *  - access is granted to the Google Cloud project behind the OAuth credentials
+ *    (see the note on `headers` below), and reaching an account through a
+ *    manager account needs a `login-customer-id` header;
  *  - reporting is a GAQL query against `searchStream`, which returns a stream of
  *    JSON chunks rather than one object.
  *
@@ -21,15 +22,24 @@ const API_BASE = `https://googleads.googleapis.com/${API_VERSION}`;
 
 const MICROS = 1_000_000;
 
+/**
+ * Google sunset developer tokens on 9 September 2026. Access is now decided by
+ * the Google Cloud project you authenticate with, and the `developer-token`
+ * header is optional and ignored — though Google has said it will be rejected
+ * in some future major version it has not yet named.
+ *
+ * So the token is sent when one is configured (harmless today, and keeps
+ * working for anyone still on an older API version) and omitted otherwise,
+ * rather than being required. Requiring it would block every account set up
+ * after the sunset, since new projects are no longer issued one.
+ */
 function headers(ctx: ConnectorContext): Record<string, string> {
   const developerToken = process.env.GOOGLE_ADS_DEVELOPER_TOKEN;
-  if (!developerToken) {
-    throw new Error("GOOGLE_ADS_DEVELOPER_TOKEN is required to call the Google Ads API");
-  }
-  const loginCustomerId = (ctx.config.loginCustomerId as string) ?? process.env.GOOGLE_ADS_LOGIN_CUSTOMER_ID;
+  const loginCustomerId =
+    (ctx.config.loginCustomerId as string) ?? process.env.GOOGLE_ADS_LOGIN_CUSTOMER_ID;
   return {
     ...bearer(ctx.credentials.accessToken),
-    "developer-token": developerToken,
+    ...(developerToken ? { "developer-token": developerToken } : {}),
     ...(loginCustomerId ? { "login-customer-id": loginCustomerId.replace(/-/g, "") } : {}),
   };
 }
@@ -69,11 +79,9 @@ export const googleAdsConnector: AdsConnector = {
   summary: "Search, Performance Max, Display, YouTube and Shopping spend and conversions.",
   docsUrl: "https://developers.google.com/google-ads/api/docs/start",
   authType: "oauth2",
-  requiredEnv: [
-    "GOOGLE_ADS_CLIENT_ID",
-    "GOOGLE_ADS_CLIENT_SECRET",
-    "GOOGLE_ADS_DEVELOPER_TOKEN",
-  ],
+  // No developer token: since the 9 September 2026 sunset, access is granted to
+  // the Google Cloud project behind these OAuth credentials.
+  requiredEnv: ["GOOGLE_ADS_CLIENT_ID", "GOOGLE_ADS_CLIENT_SECRET"],
   oauth: {
     authorizeUrl: "https://accounts.google.com/o/oauth2/v2/auth",
     tokenUrl: "https://oauth2.googleapis.com/token",
