@@ -19,7 +19,16 @@ export function describeErrorBody(body: string): string {
   if (/^<|<html|<!doctype/i.test(trimmed)) return "";
 
   try {
-    const parsed = JSON.parse(trimmed) as Record<string, unknown>;
+    const decoded = JSON.parse(trimmed) as unknown;
+
+    // searchStream answers with an array of chunks, and reports a failure as an
+    // array too. Unwrapping only objects is how a real error arrives as a bare
+    // status with nothing after it.
+    const parsed = (Array.isArray(decoded)
+      ? decoded.find((entry) => entry && typeof entry === "object" && "error" in entry) ?? decoded[0]
+      : decoded) as Record<string, unknown> | undefined;
+
+    if (!parsed || typeof parsed !== "object") return "";
 
     // Google: { error: { message, status, details: [{ errors: [{ errorCode, message }] }] } }
     const googleError = parsed.error as

@@ -17,7 +17,7 @@
 import { readFileSync } from "node:fs";
 
 import { getOAuthClient, isExpired, refreshAccessToken } from "../src/lib/connectors/oauth";
-import { googleAdsConnector } from "../src/lib/connectors/google-ads";
+import { GAQL, googleAdsConnector } from "../src/lib/connectors/google-ads";
 import {
   CredentialsUnreadableError,
   findConnectionByPlatform,
@@ -25,6 +25,7 @@ import {
   saveCredentials,
 } from "../src/lib/repo";
 import type { Credentials } from "../src/lib/types";
+import { trailingWindow } from "../src/lib/util";
 
 /**
  * Next.js reads .env for us; a plain tsx script does not, and without
@@ -182,18 +183,36 @@ async function main(): Promise<void> {
     return;
   }
 
-  heading("Report query (the call a sync actually makes)");
+  heading("The queries a sync runs");
 
-  await call(
-    "searchStream:",
-    `${HOST}/${live}/customers/${connection.externalAccountId.replace(/-/g, "")}/googleAds:searchStream`,
-    {
+  // Every query, not just one that is known to work: a sync stops at the first
+  // failure, so running them all is the difference between "something is wrong"
+  // and "this field, in this query".
+  const range = trailingWindow(90);
+  const url = `${HOST}/${live}/customers/${connection.externalAccountId.replace(/-/g, "")}/googleAds:searchStream`;
+  const failures: string[] = [];
+
+  for (const [name, query] of [
+    ["customer", GAQL.customer],
+    ["campaigns", GAQL.campaigns],
+    ["ad groups", GAQL.adGroups],
+    ["ads", GAQL.ads],
+    [`metrics (${range.start} to ${range.end})`, GAQL.metrics(range)],
+  ] as const) {
+    const { status } = await call(`${name}:`, url, {
       method: "POST",
       headers: { ...headers, "content-type": "application/json" },
-      body: JSON.stringify({ query: "SELECT customer.id, customer.descriptive_name FROM customer LIMIT 1" }),
-    },
-  );
+      body: JSON.stringify({ query }),
+    });
+    if (status !== 200) failures.push(name);
+    console.log("");
+  }
 
+  console.log(
+    failures.length === 0
+      ? "All queries succeeded. A sync should now work."
+      : `Failed: ${failures.join(", ")}. The message above each one names the cause.`,
+  );
   console.log("\nDone. Paste everything above — no secrets are printed.");
 }
 

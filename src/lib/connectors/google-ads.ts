@@ -142,6 +142,50 @@ async function gaql<T>(ctx: ConnectorContext, query: string): Promise<T[]> {
   return (chunks ?? []).flatMap((chunk) => (chunk.results ?? []) as unknown as T[]);
 }
 
+/**
+ * Every GAQL query this connector runs, in one place.
+ *
+ * Exported so the doctor script can execute exactly what a sync executes. A
+ * query that only lives inside the function that uses it gets copied into the
+ * diagnostic and then quietly drifts, which turns the diagnostic into a second
+ * thing that needs diagnosing.
+ */
+export const GAQL = {
+  customer: `
+    SELECT customer.id, customer.descriptive_name, customer.currency_code, customer.time_zone
+    FROM customer
+    LIMIT 1
+  `,
+  campaigns: `
+    SELECT campaign.id, campaign.name, campaign.status, campaign.advertising_channel_type,
+           campaign.start_date, campaign.end_date, campaign_budget.amount_micros,
+           customer.currency_code
+    FROM campaign
+    WHERE campaign.status != 'REMOVED'
+  `,
+  adGroups: `
+    SELECT ad_group.id, ad_group.name, ad_group.status, campaign.id
+    FROM ad_group
+    WHERE ad_group.status != 'REMOVED'
+  `,
+  ads: `
+    SELECT ad_group_ad.ad.id, ad_group_ad.ad.name, ad_group_ad.ad.type,
+           ad_group_ad.ad.final_urls, ad_group_ad.ad.responsive_search_ad.headlines,
+           ad_group_ad.ad.responsive_search_ad.descriptions, ad_group_ad.status,
+           ad_group.id, campaign.id
+    FROM ad_group_ad
+    WHERE ad_group_ad.status != 'REMOVED'
+  `,
+  metrics: (range: DateRange) => `
+    SELECT segments.date, campaign.id, ad_group.id, ad_group_ad.ad.id,
+           customer.currency_code,
+           metrics.impressions, metrics.clicks, metrics.cost_micros,
+           metrics.conversions, metrics.conversions_value, metrics.video_views
+    FROM ad_group_ad
+    WHERE segments.date BETWEEN '${range.start}' AND '${range.end}'
+  `,
+} as const;
+
 const STATUS_MAP: Record<string, "active" | "paused" | "ended"> = {
   ENABLED: "active",
   PAUSED: "paused",
@@ -195,11 +239,7 @@ export const googleAdsConnector: AdsConnector = {
       try {
         const rows = await gaql<{
           customer: { id: string; descriptiveName?: string; currencyCode?: string; timeZone?: string };
-        }>({ ...ctx, externalAccountId: id }, `
-          SELECT customer.id, customer.descriptive_name, customer.currency_code, customer.time_zone
-          FROM customer
-          LIMIT 1
-        `);
+        }>({ ...ctx, externalAccountId: id }, GAQL.customer);
         const customer = rows[0]?.customer;
         accounts.push({
           id,
@@ -228,13 +268,7 @@ export const googleAdsConnector: AdsConnector = {
       };
       campaignBudget?: { amountMicros?: string };
       customer?: { currencyCode?: string };
-    }>(ctx, `
-      SELECT campaign.id, campaign.name, campaign.status, campaign.advertising_channel_type,
-             campaign.start_date, campaign.end_date, campaign_budget.amount_micros,
-             customer.currency_code
-      FROM campaign
-      WHERE campaign.status != 'REMOVED'
-    `);
+    }>(ctx, GAQL.campaigns);
 
     const currency = campaignRows[0]?.customer?.currencyCode ?? ctx.config.currency ?? "USD";
 
@@ -256,11 +290,7 @@ export const googleAdsConnector: AdsConnector = {
     const groupRows = await gaql<{
       adGroup: { id: string; name: string; status: string };
       campaign: { id: string };
-    }>(ctx, `
-      SELECT ad_group.id, ad_group.name, ad_group.status, campaign.id
-      FROM ad_group
-      WHERE ad_group.status != 'REMOVED'
-    `);
+    }>(ctx, GAQL.adGroups);
 
     const adGroups = groupRows.map((row) => ({
       connectionId: ctx.connectionId,
@@ -286,14 +316,7 @@ export const googleAdsConnector: AdsConnector = {
       };
       adGroup: { id: string };
       campaign: { id: string };
-    }>(ctx, `
-      SELECT ad_group_ad.ad.id, ad_group_ad.ad.name, ad_group_ad.ad.type,
-             ad_group_ad.ad.final_urls, ad_group_ad.ad.responsive_search_ad.headlines,
-             ad_group_ad.ad.responsive_search_ad.descriptions, ad_group_ad.status,
-             ad_group.id, campaign.id
-      FROM ad_group_ad
-      WHERE ad_group_ad.status != 'REMOVED'
-    `);
+    }>(ctx, GAQL.ads);
 
     const ads = adRows.map((row) => {
       const ad = row.adGroupAd.ad;
@@ -334,14 +357,7 @@ export const googleAdsConnector: AdsConnector = {
         conversionsValue?: number;
         videoViews?: string;
       };
-    }>(ctx, `
-      SELECT segments.date, campaign.id, ad_group.id, ad_group_ad.ad.id,
-             customer.currency_code,
-             metrics.impressions, metrics.clicks, metrics.cost_micros,
-             metrics.conversions, metrics.conversions_value, metrics.video_views
-      FROM ad_group_ad
-      WHERE segments.date BETWEEN '${range.start}' AND '${range.end}'
-    `);
+    }>(ctx, GAQL.metrics(range));
 
     return rows.map((row) => ({
       date: row.segments.date,
