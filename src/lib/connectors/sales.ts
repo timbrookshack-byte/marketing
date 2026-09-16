@@ -1,4 +1,4 @@
-import { bearer, request } from "./http";
+import { ConnectorError, bearer, request } from "./http";
 import type { ConnectorContext, SalesConnector } from "./types";
 import type { DateRange, SalesOrder } from "../types";
 
@@ -50,6 +50,110 @@ export function parseLandingPage(url: string | null | undefined): Partial<OrderD
 // --------------------------------------------------------------------- Shopify
 
 /**
+ * Resolving a Shopify access token.
+ *
+ * Shopify stopped issuing permanent custom-app tokens from the store admin on
+ * 1 January 2026, so the current route is the client credentials grant: an app
+ * registered in the Dev Dashboard exchanges its client id and secret for a
+ * short-lived access token.
+ *
+ * Because those tokens expire, the connection stores the *credentials* rather
+ * than a token, and one is minted per sync. The cache below just avoids paying
+ * for that exchange twice in the same run; it is deliberately in-memory, so a
+ * restart simply mints a fresh token rather than reviving a stale one.
+ *
+ * A legacy shpat_ token, if the operator still holds one, is used directly.
+ */
+const tokenCache = new Map<string, { token: string; expiresAt: number }>();
+
+async function shopifyAccessToken(ctx: ConnectorContext, shop: string): Promise<string> {
+  const stored = (ctx.credentials.accessToken as string) ?? "";
+
+  // A permanent token from before the change still works as-is.
+  if (stored.startsWith("shpat_") || stored.startsWith("shpca_")) return stored;
+
+  const clientId = ctx.credentials.clientId as string | undefined;
+  const clientSecret = ctx.credentials.clientSecret as string | undefined;
+
+  if (!clientId || !clientSecret) {
+    // The single most common mistake: pasting the secret into the token field.
+    if (stored.startsWith("shpss_")) {
+      throw new Error(
+        "That is the Client secret, not an access token. Put it in the Client secret field and " +
+          "add the Client ID alongside it — the portal exchanges the pair for a token itself.",
+      );
+    }
+    throw new Error(
+      "Shopify needs a Client ID and Client secret from your Dev Dashboard app. Permanent " +
+        "shpat_ tokens are no longer issued from the store admin.",
+    );
+  }
+
+  const cacheKey = `${shop}:${clientId}`;
+  const cached = tokenCache.get(cacheKey);
+  if (cached && cached.expiresAt > Date.now() + 60_000) return cached.token;
+
+  interface TokenResponse {
+    access_token?: string;
+    expires_in?: number;
+    error?: string;
+    error_description?: string;
+  }
+
+  let response: TokenResponse;
+  try {
+    response = await request<TokenResponse>(`https://${shop}/admin/oauth/access_token`, {
+      method: "POST",
+      form: {
+        client_id: clientId,
+        client_secret: clientSecret,
+        grant_type: "client_credentials",
+      },
+    });
+  } catch (error) {
+    // Shopify puts the real reason in the response body, which the shared HTTP
+    // client turns into a bare status. Dig it out — "responded 400" on its own
+    // sends people hunting in the wrong place.
+    if (error instanceof ConnectorError) {
+      let detail = "";
+      try {
+        const parsed = JSON.parse(error.body) as TokenResponse;
+        detail = parsed.error_description ?? parsed.error ?? "";
+      } catch {
+        // Shopify answers some failures with an HTML error page. Dumping that
+        // into the message buries the useful part under a stylesheet, so only
+        // a short plain-text body is worth passing on.
+        const body = error.body.trim();
+        const looksLikeHtml = /^<|<html|<!doctype/i.test(body);
+        if (!looksLikeHtml && body.length <= 200) detail = body;
+      }
+      throw new Error(
+        `Shopify rejected the client credentials for ${shop} (HTTP ${error.status}${detail ? `: ${detail}` : ""}). ` +
+          "Check the Client ID and secret are from the app installed on this store, and that it " +
+          "has the read_orders scope.",
+      );
+    }
+    throw error;
+  }
+
+  if (!response.access_token) {
+    throw new Error(
+      `Shopify returned no access token for ${shop}${
+        response.error_description ? `: ${response.error_description}` : response.error ? `: ${response.error}` : ""
+      }. Check the app is installed on this store and has the read_orders scope.`,
+    );
+  }
+
+  tokenCache.set(cacheKey, {
+    token: response.access_token,
+    // Treat an unstated lifetime as short: re-minting is one cheap call.
+    expiresAt: Date.now() + (response.expires_in ?? 3600) * 1000,
+  });
+
+  return response.access_token;
+}
+
+/**
  * Shopify — Admin GraphQL API. Orders carry `customerJourneySummary`, which is
  * the closest thing to a first-party attribution record any store gives us.
  */
@@ -70,9 +174,11 @@ export const shopifyConnector: SalesConnector = {
    */
   manualSetup: {
     help:
-      "Shopify admin -> Settings -> Apps and sales channels -> Develop apps -> your app -> " +
-      "API credentials. Give it the read_orders, read_customers and read_products Admin API " +
-      "scopes under Configuration, then click Install app.",
+      "Since 1 January 2026 the store admin no longer issues permanent custom-app tokens, so " +
+      "this uses the Dev Dashboard instead: shopify.dev -> your app -> API credentials. Give the " +
+      "app the read_orders, read_customers and read_products scopes, install it on your store, " +
+      "then copy the Client ID and Client secret below. The portal exchanges them for an access " +
+      "token on every sync, so nothing here expires on you.",
     fields: [
       {
         key: "shopDomain",
@@ -82,15 +188,30 @@ export const shopifyConnector: SalesConnector = {
         required: true,
       },
       {
-        key: "accessToken",
-        label: "Admin API access token",
-        placeholder: "shpat_...",
-        help:
-          "Starts with shpat_ and is revealed once, when you install the app. This is NOT the " +
-          "API secret key on the same page (shpss_) — that is a client secret and will be rejected.",
+        key: "clientId",
+        label: "Client ID (API key)",
+        placeholder: "abc123...",
+        target: "credentials",
+        required: true,
+      },
+      {
+        key: "clientSecret",
+        label: "Client secret",
+        placeholder: "shpss_...",
         secret: true,
         target: "credentials",
         required: true,
+      },
+      {
+        key: "accessToken",
+        label: "Admin API access token (legacy, optional)",
+        placeholder: "shpat_...",
+        help:
+          "Only if you still hold a permanent token from before the January 2026 change. Leave " +
+          "blank otherwise — the Client ID and secret above are the current route.",
+        secret: true,
+        target: "credentials",
+        required: false,
       },
     ],
   },
@@ -99,28 +220,7 @@ export const shopifyConnector: SalesConnector = {
     const shop = ctx.config.shopDomain as string;
     if (!shop) throw new Error("Shopify connection is missing its shop domain");
 
-    /*
-     * The API credentials page shows several values and only one of them is an
-     * access token. Pasting the API secret key instead is the common mistake,
-     * and Shopify answers it with a bare 401 that explains nothing — so name
-     * the actual problem here rather than passing that confusion along.
-     */
-    const token = ctx.credentials.accessToken ?? "";
-    if (token.startsWith("shpss_")) {
-      throw new Error(
-        "That is the API secret key (shpss_), not an access token. On the same API credentials " +
-          "page, install the app and copy the Admin API access token, which starts with shpat_ " +
-          "and is shown only once. If you created this app in the Dev Dashboard rather than the " +
-          "store admin, it issues no shpat_ at all — create the app under Settings -> Apps and " +
-          "sales channels -> Develop apps instead.",
-      );
-    }
-    if (token && !token.startsWith("shpat_") && !token.startsWith("shpca_")) {
-      throw new Error(
-        `That does not look like a Shopify Admin API access token (expected shpat_, got ` +
-          `"${token.slice(0, 6)}..."). Install the custom app and copy the Admin API access token.`,
-      );
-    }
+    const token = await shopifyAccessToken(ctx, shop);
     const version = (ctx.config.apiVersion as string) ?? "2025-01";
     const endpoint = `https://${shop}/admin/api/${version}/graphql.json`;
 
@@ -160,7 +260,7 @@ export const shopifyConnector: SalesConnector = {
         errors?: { message: string }[];
       } = await request(endpoint, {
         method: "POST",
-        headers: { "X-Shopify-Access-Token": ctx.credentials.accessToken ?? "" },
+        headers: { "X-Shopify-Access-Token": token },
         body: {
           query,
           variables: {

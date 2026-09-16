@@ -155,8 +155,14 @@ To start empty instead: `npm run db:migrate`, then connect real accounts.
 
 Two different places, depending on the platform:
 
-**Pasted into the app** — Shopify, Stripe, WooCommerce and OpenAI Ads issue a key directly, so
-they are connected from the Connections page. Click **Connect** on the card, paste what it asks
+**Pasted into the app** — Shopify, Stripe, WooCommerce and OpenAI Ads are connected from the
+Connections page.
+
+Shopify is the awkward one: since 1 January 2026 the store admin no longer issues permanent
+custom-app tokens, so there is no `shpat_` to find. Register an app in the Dev Dashboard, install
+it on your store, and paste its **Client ID** and **Client secret** (`shpss_`). The portal runs the
+client credentials grant itself on each sync, so the short-lived token never expires on you. A
+legacy `shpat_` from before the change still works if you have one. Click **Connect** on the card, paste what it asks
 for, and the app saves it encrypted and immediately runs a first sync so you find out straight
 away whether the key works. Nothing for these goes in `.env`.
 
