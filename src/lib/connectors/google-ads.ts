@@ -1,4 +1,4 @@
-import { bearer, request } from "./http";
+import { ConnectorError, bearer, request } from "./http";
 import type { AdsConnector, ConnectorContext, EntitySnapshot, RemoteAccount } from "./types";
 import type { DateRange, MetricRow } from "../types";
 import { stableId } from "../util";
@@ -17,10 +17,59 @@ import { stableId } from "../util";
  * normalised here so nothing downstream has to remember that.
  */
 
-const API_VERSION = process.env.GOOGLE_ADS_API_VERSION ?? "v21";
-const API_BASE = `https://googleads.googleapis.com/${API_VERSION}`;
+const HOST = "https://googleads.googleapis.com";
 
 const MICROS = 1_000_000;
+
+/**
+ * Resolving the API version.
+ *
+ * Google now ships roughly monthly, promotes four major versions a year, and
+ * sunsets each about a year after release — v21 went dark on 5 August 2026 and
+ * v22 follows on 7 October. A version pinned in source is therefore a bug with
+ * a delivery date, and it fails as a bare 404 from a host that is plainly
+ * reachable, which tells the operator nothing.
+ *
+ * So the version is discovered: candidates are tried newest-first until one
+ * answers with anything other than 404. A 401 or 403 still means the path
+ * exists — that is an auth problem, not a missing version — so any non-404
+ * settles it. The result is cached for the process.
+ *
+ * GOOGLE_ADS_API_VERSION pins it explicitly and skips the probe.
+ */
+const CANDIDATE_VERSIONS = ["v26", "v25", "v24", "v23", "v22"];
+
+let resolvedVersion: string | null = process.env.GOOGLE_ADS_API_VERSION ?? null;
+
+async function apiBase(ctx: ConnectorContext): Promise<string> {
+  if (resolvedVersion) return `${HOST}/${resolvedVersion}`;
+
+  const rejected: string[] = [];
+  for (const version of CANDIDATE_VERSIONS) {
+    try {
+      await request(`${HOST}/${version}/customers:listAccessibleCustomers`, {
+        headers: headers(ctx),
+        retries: 1,
+      });
+      resolvedVersion = version;
+      return `${HOST}/${version}`;
+    } catch (error) {
+      if (error instanceof ConnectorError && error.status === 404) {
+        rejected.push(version);
+        continue;
+      }
+      // Reached the endpoint and got a real answer: the version is live.
+      resolvedVersion = version;
+      return `${HOST}/${version}`;
+    }
+  }
+
+  throw new Error(
+    `None of the Google Ads API versions this connector knows about are live (tried ${rejected.join(", ")}). ` +
+      "Google has moved on again — set GOOGLE_ADS_API_VERSION to the current one from " +
+      "developers.google.com/google-ads/api/docs/sunset-dates.",
+  );
+}
 
 /**
  * Google sunset developer tokens on 9 September 2026. Access is now decided by
@@ -59,8 +108,9 @@ interface SearchStreamChunk {
  * We flatten it into plain rows.
  */
 async function gaql<T>(ctx: ConnectorContext, query: string): Promise<T[]> {
+  const base = await apiBase(ctx);
   const chunks = await request<SearchStreamChunk[]>(
-    `${API_BASE}/customers/${customerId(ctx)}/googleAds:searchStream`,
+    `${base}/customers/${customerId(ctx)}/googleAds:searchStream`,
     { method: "POST", headers: headers(ctx), body: { query } },
   );
   return (chunks ?? []).flatMap((chunk) => (chunk.results ?? []) as unknown as T[]);
@@ -91,8 +141,9 @@ export const googleAdsConnector: AdsConnector = {
   },
 
   async listAccounts(ctx): Promise<RemoteAccount[]> {
+    const base = await apiBase(ctx);
     const listed = await request<{ resourceNames?: string[] }>(
-      `${API_BASE}/customers:listAccessibleCustomers`,
+      `${base}/customers:listAccessibleCustomers`,
       { headers: headers(ctx) },
     );
     const ids = (listed.resourceNames ?? []).map((name) => name.split("/")[1]);
@@ -285,7 +336,7 @@ export const googleAdsConnector: AdsConnector = {
   },
 
   async pauseCampaign(ctx, externalCampaignId) {
-    await request(`${API_BASE}/customers/${customerId(ctx)}/campaigns:mutate`, {
+    await request(`${await apiBase(ctx)}/customers/${customerId(ctx)}/campaigns:mutate`, {
       method: "POST",
       headers: headers(ctx),
       body: {
@@ -315,7 +366,7 @@ export const googleAdsConnector: AdsConnector = {
     if (!resourceName) {
       return { ok: false, detail: `No budget resource found for campaign ${externalCampaignId}` };
     }
-    await request(`${API_BASE}/customers/${customerId(ctx)}/campaignBudgets:mutate`, {
+    await request(`${await apiBase(ctx)}/customers/${customerId(ctx)}/campaignBudgets:mutate`, {
       method: "POST",
       headers: headers(ctx),
       body: {
