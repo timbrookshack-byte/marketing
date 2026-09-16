@@ -153,6 +153,29 @@ its own marketing, which is the thing this tool exists to stop.
 If you seeded demo data before it was removed from the project, `npm run db:purge-demo` deletes it
 and everything derived from it.
 
+### Google Ads has two separate approvals
+
+They are configured in different products, and being granted one tells you
+nothing about the other. Confusing them costs an afternoon, so:
+
+| | Where | What it gates |
+| --- | --- | --- |
+| OAuth consent screen publishing status | Google Cloud Console | Who may authorise the app, and how long refresh tokens live |
+| API access level (test → Basic) | Google Ads → API Center, under the manager account | Whether the API returns data for real accounts |
+
+Publishing the consent screen does not grant API access, and being granted API
+access does not stop a token expiring. Both are needed.
+
+The publishing status is the one that fails quietly. While it is set to Testing,
+Google expires refresh tokens after seven days: the connection works, then dies
+a week later with no change on this end. Push the consent screen to production
+and reconnect, so the stored token is issued under production rules. Expect an
+"unverified app" warning on the way through — the Ads scope is sensitive, and
+verification is only enforced well beyond single-operator use.
+
+Without API access, every report query returns
+`CLOUD_PROJECT_NOT_APPROVED_FOR_PRODUCTION` no matter how clean the auth is.
+
 ### When Google Ads will not connect
 
 Google answers every kind of failure with a bare status code, and the same 403
