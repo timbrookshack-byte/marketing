@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { getConnection, upsertConnection } from "@/lib/repo";
+import { clearConnectionData, getConnection, upsertConnection } from "@/lib/repo";
 
 export const dynamic = "force-dynamic";
 
@@ -29,6 +29,13 @@ export async function PATCH(request: Request, context: { params: Promise<{ id: s
   }
   const loginCustomerId = body.loginCustomerId?.trim().replace(/-/g, "") || null;
 
+  // Data pulled from the previous account is not this account's. Keeping it
+  // would quietly inflate every total on the dashboard with another
+  // advertiser's spend, so it goes before the switch is recorded.
+  const switchedAccount =
+    connection.externalAccountId !== null && connection.externalAccountId !== accountId;
+  const cleared = switchedAccount ? clearConnectionData(connection.id) : null;
+
   const baseName = connection.displayName.split(" — ")[0];
   upsertConnection({
     id: connection.id,
@@ -41,5 +48,5 @@ export async function PATCH(request: Request, context: { params: Promise<{ id: s
     config: { ...connection.config, ...(loginCustomerId ? { loginCustomerId } : {}) },
   });
 
-  return NextResponse.json({ ok: true, externalAccountId: accountId, loginCustomerId });
+  return NextResponse.json({ ok: true, externalAccountId: accountId, loginCustomerId, cleared });
 }

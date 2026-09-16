@@ -292,7 +292,18 @@ export function AccountIdForm({
       if (!response.ok) {
         setMessage(body.error ?? `Failed (${response.status})`);
       } else {
-        setOpen(false);
+        // Switching accounts discards what the old one pulled. Saying so is the
+        // difference between a deliberate reset and data that vanished.
+        const cleared = body.cleared as { campaigns: number; metrics: number; orders: number } | null;
+        const removed = cleared ? cleared.campaigns + cleared.metrics + cleared.orders : 0;
+        if (removed > 0) {
+          setMessage(
+            `Saved. Cleared ${removed.toLocaleString()} rows from the previous account — ` +
+              "sync to pull this one.",
+          );
+        } else {
+          setOpen(false);
+        }
         router.refresh();
       }
     } catch (error) {
@@ -358,7 +369,10 @@ export function AccountIdForm({
         </button>
       </div>
       {message ? (
-        <p className="mt-2 text-[11px]" style={{ color: "var(--status-critical)" }}>
+        <p
+          className="mt-2 text-[11px]"
+          style={{ color: message.startsWith("Saved") ? "var(--text-secondary)" : "var(--status-critical)" }}
+        >
           {message}
         </p>
       ) : null}

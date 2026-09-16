@@ -132,6 +132,30 @@ export function deleteConnection(id: string): void {
   getDb().prepare("DELETE FROM connections WHERE id = ?").run(id);
 }
 
+/**
+ * Removes everything a connection has pulled, without disconnecting it.
+ *
+ * Pointing a connection at a different account makes what it holds belong to a
+ * different advertiser. Left in place those rows do not look stale — they look
+ * like part of the new account, and every total silently includes them. So the
+ * slate is cleared when the account changes. Credentials are untouched, so the
+ * connection stays authorised and the next sync refills it.
+ */
+export function clearConnectionData(connectionId: string): {
+  campaigns: number;
+  metrics: number;
+  orders: number;
+} {
+  const db = getDb();
+  // Ad groups and ads hang off campaigns with ON DELETE CASCADE, so they go too.
+  const run = db.transaction(() => ({
+    campaigns: db.prepare("DELETE FROM campaigns WHERE connection_id = ?").run(connectionId).changes,
+    metrics: db.prepare("DELETE FROM metrics_daily WHERE connection_id = ?").run(connectionId).changes,
+    orders: db.prepare("DELETE FROM sales_orders WHERE connection_id = ?").run(connectionId).changes,
+  }));
+  return run();
+}
+
 /** Credentials are encrypted at rest — only the server ever calls these two. */
 export function saveCredentials(connectionId: string, credentials: Credentials): void {
   getDb()
