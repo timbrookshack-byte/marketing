@@ -61,6 +61,25 @@ export function describeErrorBody(body: string): string {
   return "";
 }
 
+/**
+ * Whether reconnecting would actually fix this.
+ *
+ * 401 means the platform does not know who is calling: the token is missing,
+ * expired or revoked, and a fresh handshake fixes it. 403 is the opposite — it
+ * knows exactly who is calling and is refusing them. Reconnecting the same
+ * account changes nothing, and telling someone to do it sends them round a loop
+ * that cannot terminate while the real problem (an account they cannot see, an
+ * API tier they have not been granted) goes unnamed.
+ *
+ * The exception is platforms that answer an expired token with 403 anyway, so a
+ * 403 that names an authentication failure is still treated as one.
+ */
+function reconnectWouldHelp(status: number, body: string): boolean {
+  if (status === 401) return true;
+  if (status !== 403) return false;
+  return /UNAUTHENTICATED|invalid_grant|invalid_token|token (has )?expired|expired token/i.test(body);
+}
+
 export class ConnectorError extends Error {
   readonly status: number;
   readonly body: string;
@@ -73,7 +92,7 @@ export class ConnectorError extends Error {
     this.name = "ConnectorError";
     this.status = status;
     this.body = body;
-    this.needsReauth = status === 401 || status === 403;
+    this.needsReauth = reconnectWouldHelp(status, body);
   }
 }
 
