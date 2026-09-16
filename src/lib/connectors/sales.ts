@@ -237,7 +237,6 @@ export const shopifyConnector: SalesConnector = {
               customer { id numberOfOrders }
               landingPageUrl
               customerJourneySummary {
-                momentsCount
                 lastVisit { landingPage source sourceType utmParameters { source medium campaign content term } }
               }
             }
@@ -271,7 +270,12 @@ export const shopifyConnector: SalesConnector = {
       });
 
       if (response.errors?.length) {
-        throw new Error(`Shopify GraphQL error: ${response.errors[0].message}`);
+        // GraphQL validates the whole document and returns every problem at
+        // once. Surfacing only the first turns one schema drift into several
+        // round trips.
+        throw new Error(
+          `Shopify GraphQL error: ${response.errors.map((e) => e.message).join(" | ")}`,
+        );
       }
 
       const page = response.data?.orders;
