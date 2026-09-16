@@ -151,7 +151,19 @@ specific diagnostic — see `src/lib/demo.ts` for which.
 
 To start empty instead: `npm run db:migrate`, then connect real accounts.
 
-### Connecting real accounts
+### Where credentials go
+
+Two different places, depending on the platform:
+
+**Pasted into the app** — Shopify, Stripe, WooCommerce and OpenAI Ads issue a key directly, so
+they are connected from the Connections page. Click **Connect** on the card, paste what it asks
+for, and the app saves it encrypted and immediately runs a first sync so you find out straight
+away whether the key works. Nothing for these goes in `.env`.
+
+**In `.env`** — the OAuth platforms (Google Ads, Meta, LinkedIn, TikTok, GA4) need an app
+registered with that platform first. Its client id and secret go in `.env`; the per-account
+tokens are obtained by clicking **Connect**, and are stored encrypted in the database, never in
+the file.
 
 Copy `.env.example` to `.env` and fill in the platforms you use. A connector appears as
 connectable once its client id and secret are set; **Connect** on the connections page runs the
@@ -164,7 +176,9 @@ APP_BASE_URL=http://localhost:3000        # must match your registered OAuth red
 CREDENTIALS_KEY=$(openssl rand -base64 32) # AES-256-GCM key for tokens at rest
 ```
 
-`CREDENTIALS_KEY` is **required in production** and refuses to fall back. Redirect URIs are
+`CREDENTIALS_KEY` is **required in production** and refuses to fall back — connecting an account
+without it fails with that message. In development an insecure key is derived instead, with a
+warning, so set a real one before connecting anything live. Redirect URIs are
 `{APP_BASE_URL}/api/connectors/{platform}/callback`.
 
 ### AI features

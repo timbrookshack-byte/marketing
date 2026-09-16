@@ -65,6 +65,8 @@ export interface ConnectorCatalogEntry {
   /** Env vars this connector needs that are not set on this server. */
   missingEnv: string[];
   configured: boolean;
+  /** Present when this platform can be connected by pasting credentials. */
+  manualSetup: Connector["manualSetup"] | null;
 }
 
 export function catalog(): ConnectorCatalogEntry[] {
@@ -83,7 +85,10 @@ export function catalog(): ConnectorCatalogEntry[] {
       provisional: Boolean(connector.provisional),
       provisionalNote: connector.provisionalNote ?? null,
       missingEnv,
-      configured: missingEnv.length === 0 || hasOAuthClient,
+      // A connector with a manual path is always usable: it needs no server-side
+      // client credentials, only what the operator pastes in.
+      configured: Boolean(connector.manualSetup) || missingEnv.length === 0 || hasOAuthClient,
+      manualSetup: connector.manualSetup ?? null,
     };
   });
 }

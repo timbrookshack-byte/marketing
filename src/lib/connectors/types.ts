@@ -41,6 +41,30 @@ export interface RemoteAccount {
   timezone?: string;
 }
 
+/**
+ * A field the operator fills in to connect an account by hand, for platforms
+ * that issue a key directly rather than running an OAuth handshake — and for
+ * Shopify, where a single-store owner is better served by a custom-app token
+ * than by the full OAuth dance.
+ */
+export interface ManualField {
+  key: string;
+  label: string;
+  placeholder?: string;
+  help?: string;
+  /** Rendered as a password field and never echoed back to the browser. */
+  secret?: boolean;
+  /** Where the value belongs: an encrypted credential, open config, or the account id. */
+  target: "credentials" | "config" | "account";
+  required?: boolean;
+}
+
+export interface ManualSetup {
+  /** One line telling the operator where to find these values. */
+  help: string;
+  fields: ManualField[];
+}
+
 /** Everything a connector call needs to reach the platform. */
 export interface ConnectorContext {
   connectionId: string;
@@ -81,6 +105,12 @@ interface BaseConnector {
   /** Human note about what "provisional" means for this platform. */
   provisionalNote?: string;
   listAccounts?: (ctx: ConnectorContext) => Promise<RemoteAccount[]>;
+  /**
+   * Set when an account can be added by pasting credentials. Without this a
+   * non-OAuth connector has no way into the app at all, which is the bug this
+   * field exists to prevent.
+   */
+  manualSetup?: ManualSetup;
 }
 
 export interface AdsConnector extends BaseConnector {

@@ -59,14 +59,38 @@ export const shopifyConnector: SalesConnector = {
   displayName: "Shopify",
   summary: "Store orders with landing pages and referrer data for attribution.",
   docsUrl: "https://shopify.dev/docs/api/admin-graphql",
-  authType: "oauth2",
-  requiredEnv: ["SHOPIFY_CLIENT_ID", "SHOPIFY_CLIENT_SECRET"],
-  oauth: {
-    // The shop domain is per-connection, so the authorize URL is templated at
-    // connect time using the `shopDomain` config value.
-    authorizeUrl: "https://{shop}.myshopify.com/admin/oauth/authorize",
-    tokenUrl: "https://{shop}.myshopify.com/admin/oauth/access_token",
-    scopes: ["read_orders", "read_customers", "read_products"],
+  authType: "api_key",
+  requiredEnv: [],
+  /*
+   * No OAuth block on purpose. Shopify's OAuth flow is built for apps serving
+   * many merchants, and its authorize URL is per-shop — there is no single URL
+   * to redirect to. A store owner connecting their own shop should create a
+   * custom app in the admin instead, which issues an Admin API token directly
+   * and takes about a minute.
+   */
+  manualSetup: {
+    help:
+      "In Shopify admin: Settings -> Apps and sales channels -> Develop apps -> Create an app. " +
+      "Under Configuration give it the read_orders, read_customers and read_products Admin API " +
+      "scopes, then Install app and reveal the Admin API access token.",
+    fields: [
+      {
+        key: "shopDomain",
+        label: "Shop domain",
+        placeholder: "your-store.myshopify.com",
+        target: "config",
+        required: true,
+      },
+      {
+        key: "accessToken",
+        label: "Admin API access token",
+        placeholder: "shpat_...",
+        help: "Shown once when you install the custom app.",
+        secret: true,
+        target: "credentials",
+        required: true,
+      },
+    ],
   },
 
   async fetchOrders(ctx: ConnectorContext, range: DateRange): Promise<OrderDraft[]> {
@@ -196,7 +220,22 @@ export const stripeConnector: SalesConnector = {
   summary: "Payments and subscriptions, with UTMs read from charge metadata.",
   docsUrl: "https://docs.stripe.com/api",
   authType: "api_key",
-  requiredEnv: ["STRIPE_API_KEY"],
+  requiredEnv: [],
+  manualSetup: {
+    help:
+      "Stripe dashboard -> Developers -> API keys -> Create restricted key. It only needs read " +
+      "access to Charges; do not paste a secret key with write access.",
+    fields: [
+      {
+        key: "apiKey",
+        label: "Restricted API key",
+        placeholder: "rk_live_...",
+        secret: true,
+        target: "credentials",
+        required: true,
+      },
+    ],
+  },
 
   async fetchOrders(ctx: ConnectorContext, range: DateRange): Promise<OrderDraft[]> {
     const key = (ctx.credentials.apiKey as string) ?? process.env.STRIPE_API_KEY;
@@ -279,7 +318,17 @@ export const wooCommerceConnector: SalesConnector = {
   summary: "WordPress store orders over the REST API.",
   docsUrl: "https://woocommerce.github.io/woocommerce-rest-api-docs/",
   authType: "basic",
-  requiredEnv: ["WOOCOMMERCE_CONSUMER_KEY", "WOOCOMMERCE_CONSUMER_SECRET"],
+  requiredEnv: [],
+  manualSetup: {
+    help:
+      "WordPress admin -> WooCommerce -> Settings -> Advanced -> REST API -> Add key, with Read " +
+      "permission.",
+    fields: [
+      { key: "storeUrl", label: "Store URL", placeholder: "https://example.com", target: "config", required: true },
+      { key: "consumerKey", label: "Consumer key", placeholder: "ck_...", secret: true, target: "credentials", required: true },
+      { key: "consumerSecret", label: "Consumer secret", placeholder: "cs_...", secret: true, target: "credentials", required: true },
+    ],
+  },
 
   async fetchOrders(ctx: ConnectorContext, range: DateRange): Promise<OrderDraft[]> {
     const storeUrl = ctx.config.storeUrl as string;

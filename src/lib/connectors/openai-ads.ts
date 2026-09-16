@@ -74,7 +74,16 @@ export const openAiAdsConnector: AdsConnector = {
   summary: "Sponsored placements inside assistant conversations and search surfaces.",
   docsUrl: "https://platform.openai.com/docs",
   authType: "api_key",
-  requiredEnv: ["OPENAI_ADS_API_KEY"],
+  requiredEnv: [],
+  manualSetup: {
+    help:
+      "Provisional connector — verify the field names in EXPECTED_SHAPE against the live API " +
+      "before trusting these numbers. Set OPENAI_ADS_API_BASE if the base URL differs.",
+    fields: [
+      { key: "apiKey", label: "API key", placeholder: "sk-...", secret: true, target: "credentials", required: true },
+      { key: "account", label: "Account ID", placeholder: "acct_...", target: "account", required: true },
+    ],
+  },
   provisional: true,
   provisionalNote:
     "Written against a declared contract, not published documentation. Verify the field names in " +

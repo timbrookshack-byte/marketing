@@ -1,7 +1,7 @@
 import { catalog, channelColor } from "@/lib/connectors/registry";
 import { listConnections, listSyncRuns } from "@/lib/repo";
 import { Card, ChannelDot, TableWrap, Td, Th } from "@/components/ui";
-import { ConnectionControls, DemoDataButton, SyncAllButton } from "./controls";
+import { ConnectionControls, DemoDataButton, ManualConnectForm, SyncAllButton } from "./controls";
 
 export const dynamic = "force-dynamic";
 
@@ -175,10 +175,21 @@ function PlatformCard({
       ) : null}
 
       <footer className="mt-auto flex flex-wrap items-center gap-2 pt-1">
+        {/* Platforms that issue a key directly are connected by pasting it;
+            the rest run the OAuth handshake. Every connector has one or the
+            other, so none is left with no way in. */}
+        {entry.manualSetup ? (
+          <ManualConnectForm
+            platform={entry.platform}
+            displayName={entry.displayName}
+            setup={entry.manualSetup}
+            connected={connection?.status === "connected"}
+          />
+        ) : null}
         <ConnectionControls
           platform={entry.platform}
           connectionId={connection?.id ?? null}
-          canConnect={entry.configured && entry.authType === "oauth2"}
+          canConnect={entry.configured && entry.authType === "oauth2" && !entry.manualSetup}
           status={connection?.status ?? "disconnected"}
         />
         <a

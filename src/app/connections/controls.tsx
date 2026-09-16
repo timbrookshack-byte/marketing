@@ -3,6 +3,127 @@
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 
+/**
+ * Pasting credentials for a platform that issues a key directly.
+ *
+ * Secrets go straight to the server and are encrypted there. Nothing is read
+ * back afterwards, so a saved key can be replaced but never viewed.
+ */
+export function ManualConnectForm({
+  platform,
+  displayName,
+  setup,
+  connected,
+}: {
+  platform: string;
+  displayName: string;
+  setup: { help: string; fields: ManualFieldSpec[] };
+  connected: boolean;
+}) {
+  const router = useRouter();
+  const [open, setOpen] = useState(false);
+  const [values, setValues] = useState<Record<string, string>>({});
+  const [busy, setBusy] = useState(false);
+  const [message, setMessage] = useState<string | null>(null);
+
+  if (!open) {
+    return (
+      <button
+        type="button"
+        onClick={() => setOpen(true)}
+        className="rounded px-2 py-1 text-[11px] font-medium text-white transition-opacity hover:opacity-90"
+        style={{ background: "var(--series-1)" }}
+      >
+        {connected ? "Replace key" : "Connect"}
+      </button>
+    );
+  }
+
+  const submit = async (event: React.FormEvent) => {
+    event.preventDefault();
+    setBusy(true);
+    setMessage(null);
+    try {
+      const response = await fetch("/api/connections", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ platform, values }),
+      });
+      const body = await response.json();
+      if (!response.ok || body.ok === false) {
+        setMessage(body.error ?? `Failed (${response.status})`);
+      } else {
+        setMessage(`Connected — pulled ${(body.rowsIngested ?? 0).toLocaleString()} rows.`);
+        setValues({});
+        setOpen(false);
+        router.refresh();
+      }
+    } catch (error) {
+      setMessage((error as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <form onSubmit={submit} className="basis-full">
+      <p className="mb-2 text-[11px] leading-snug text-[var(--text-secondary)]">{setup.help}</p>
+      <div className="flex flex-col gap-2">
+        {setup.fields.map((field) => (
+          <label key={field.key} className="flex flex-col gap-1">
+            <span className="text-[11px] font-medium text-[var(--text-secondary)]">{field.label}</span>
+            <input
+              type={field.secret ? "password" : "text"}
+              autoComplete="off"
+              value={values[field.key] ?? ""}
+              placeholder={field.placeholder}
+              onChange={(event) =>
+                setValues((current) => ({ ...current, [field.key]: event.target.value }))
+              }
+              className="w-full rounded border bg-transparent px-2 py-1.5 text-[12px] outline-none transition-colors focus:border-[var(--series-1)] hairline"
+            />
+            {field.help ? (
+              <span className="text-[10px] text-[var(--text-muted)]">{field.help}</span>
+            ) : null}
+          </label>
+        ))}
+      </div>
+      <div className="mt-2 flex items-center gap-2">
+        <button
+          type="submit"
+          disabled={busy}
+          className="rounded px-2 py-1 text-[11px] font-medium text-white transition-opacity hover:opacity-90 disabled:opacity-60"
+          style={{ background: "var(--series-1)" }}
+        >
+          {busy ? "Connecting…" : `Connect ${displayName}`}
+        </button>
+        <button
+          type="button"
+          onClick={() => {
+            setOpen(false);
+            setValues({});
+          }}
+          className="text-[11px] text-[var(--text-muted)] underline underline-offset-2"
+        >
+          Cancel
+        </button>
+      </div>
+      {message ? (
+        <p className="mt-2 text-[11px] text-[var(--text-secondary)]">{message}</p>
+      ) : null}
+    </form>
+  );
+}
+
+export interface ManualFieldSpec {
+  key: string;
+  label: string;
+  placeholder?: string;
+  help?: string;
+  secret?: boolean;
+  required?: boolean;
+}
+
 export function ConnectionControls({
   platform,
   connectionId,
