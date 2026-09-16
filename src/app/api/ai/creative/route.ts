@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { buildSnapshot } from "@/lib/analytics";
 import { workshopCreative } from "@/lib/ai/analyst";
-import { AiUnavailableError } from "@/lib/ai/client";
+import { AiUnavailableError, explainAiError } from "@/lib/ai/client";
 import { saveCreativeBrief } from "@/lib/repo";
 import type { PlatformId } from "@/lib/types";
 
@@ -42,6 +42,6 @@ export async function POST(request: Request) {
     return NextResponse.json({ ok: true, workshop });
   } catch (error) {
     const status = error instanceof AiUnavailableError ? 400 : 500;
-    return NextResponse.json({ error: (error as Error).message }, { status });
+    return NextResponse.json({ error: explainAiError(error) }, { status });
   }
 }

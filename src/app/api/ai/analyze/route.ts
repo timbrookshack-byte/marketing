@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { buildSnapshot } from "@/lib/analytics";
 import { analysePortfolio, toRecommendationRows } from "@/lib/ai/analyst";
-import { AiUnavailableError } from "@/lib/ai/client";
+import { AiUnavailableError, explainAiError } from "@/lib/ai/client";
 import { clearRecommendations, saveRecommendations } from "@/lib/repo";
 
 export const dynamic = "force-dynamic";
@@ -26,6 +26,6 @@ export async function POST(request: Request) {
     return NextResponse.json({ ok: true, analysis });
   } catch (error) {
     const status = error instanceof AiUnavailableError ? 400 : 500;
-    return NextResponse.json({ error: (error as Error).message }, { status });
+    return NextResponse.json({ error: explainAiError(error) }, { status });
   }
 }
