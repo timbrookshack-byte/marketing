@@ -184,6 +184,10 @@ APP_BASE_URL=http://localhost:3000        # must match your registered OAuth red
 CREDENTIALS_KEY=$(openssl rand -base64 32) # AES-256-GCM key for tokens at rest
 ```
 
+If a connection authorises but ends up pointing at no account — most often Google Ads, where an
+ad account inside a manager (MCC) account does not appear in the accessible-customers list — use
+**Set account ID** on its card to name the customer ID and the manager ID directly.
+
 `CREDENTIALS_KEY` is **required in production** and refuses to fall back — connecting an account
 without it fails with that message. In development an insecure key is derived instead, with a
 warning, so set a real one before connecting anything live. Redirect URIs are

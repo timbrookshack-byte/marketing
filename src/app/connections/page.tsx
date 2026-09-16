@@ -1,7 +1,13 @@
 import { catalog, channelColor } from "@/lib/connectors/registry";
 import { listConnections, listSyncRuns } from "@/lib/repo";
 import { Card, ChannelDot, TableWrap, Td, Th } from "@/components/ui";
-import { ConnectionControls, ManualConnectForm, SyncAllButton } from "./controls";
+import {
+  AccountIdForm,
+  CallbackBanner,
+  ConnectionControls,
+  ManualConnectForm,
+  SyncAllButton,
+} from "./controls";
 
 export const dynamic = "force-dynamic";
 
@@ -12,7 +18,14 @@ const STATUS_COPY: Record<string, { label: string; color: string; icon: string }
   disconnected: { label: "Not connected", color: "var(--text-muted)", icon: "○" },
 };
 
-export default function ConnectionsPage() {
+export default async function ConnectionsPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ connected?: string; error?: string }>;
+}) {
+  // The OAuth callback redirects back with its outcome in the query string.
+  // Without this the whole handshake could fail and the page would look idle.
+  const { connected, error } = await searchParams;
   const entries = catalog();
   const connections = listConnections();
   const runs = listSyncRuns(12);
@@ -33,6 +46,8 @@ export default function ConnectionsPage() {
         </div>
         <SyncAllButton />
       </div>
+
+      <CallbackBanner connected={connected} error={error} />
 
       <Card
         title="Ad platforms"
@@ -188,6 +203,15 @@ function PlatformCard({
           canConnect={entry.configured && entry.authType === "oauth2" && !entry.manualSetup}
           status={connection?.status ?? "disconnected"}
         />
+        {/* Authorised but pointing at nothing: account discovery can fail even
+            when OAuth succeeds, so let the operator name the account. */}
+        {connection && !entry.manualSetup ? (
+          <AccountIdForm
+            connectionId={connection.id}
+            platform={entry.platform}
+            currentAccountId={connection.externalAccountId}
+          />
+        ) : null}
         <a
           href={entry.docsUrl}
           target="_blank"

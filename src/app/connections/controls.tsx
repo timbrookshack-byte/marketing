@@ -240,3 +240,157 @@ export function SyncAllButton() {
     </div>
   );
 }
+
+/**
+ * Naming the account a connection points at.
+ *
+ * Shown when OAuth succeeded but no account was attached — which on Google Ads
+ * usually means the ad account sits under a manager account, so the login can
+ * see it without it appearing in the accessible-customers list.
+ */
+export function AccountIdForm({
+  connectionId,
+  platform,
+  currentAccountId,
+}: {
+  connectionId: string;
+  platform: string;
+  currentAccountId: string | null;
+}) {
+  const router = useRouter();
+  const [open, setOpen] = useState(false);
+  const [accountId, setAccountId] = useState(currentAccountId ?? "");
+  const [loginCustomerId, setLoginCustomerId] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [message, setMessage] = useState<string | null>(null);
+
+  const isGoogle = platform === "google_ads";
+
+  if (!open) {
+    return (
+      <button
+        type="button"
+        onClick={() => setOpen(true)}
+        className="rounded border px-2 py-1 text-[11px] font-medium transition-colors hover:bg-[var(--surface-sunken)] hairline"
+      >
+        {currentAccountId ? "Change account ID" : "Set account ID"}
+      </button>
+    );
+  }
+
+  const submit = async (event: React.FormEvent) => {
+    event.preventDefault();
+    setBusy(true);
+    setMessage(null);
+    try {
+      const response = await fetch(`/api/connections/${connectionId}/settings`, {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ externalAccountId: accountId, loginCustomerId }),
+      });
+      const body = await response.json();
+      if (!response.ok) {
+        setMessage(body.error ?? `Failed (${response.status})`);
+      } else {
+        setOpen(false);
+        router.refresh();
+      }
+    } catch (error) {
+      setMessage((error as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const field =
+    "w-full rounded border bg-transparent px-2 py-1.5 text-[12px] outline-none transition-colors focus:border-[var(--series-1)] hairline";
+
+  return (
+    <form onSubmit={submit} className="basis-full">
+      {isGoogle ? (
+        <p className="mb-2 text-[11px] leading-snug text-[var(--text-secondary)]">
+          The customer ID is at the top right of the Google Ads interface, like 123-456-7890.
+          If the account is inside a manager (MCC) account, add the manager&rsquo;s ID too —
+          without it Google refuses the request.
+        </p>
+      ) : null}
+      <div className="flex flex-col gap-2">
+        <label className="flex flex-col gap-1">
+          <span className="text-[11px] font-medium text-[var(--text-secondary)]">
+            {isGoogle ? "Customer ID" : "Account ID"}
+          </span>
+          <input
+            value={accountId}
+            onChange={(event) => setAccountId(event.target.value)}
+            placeholder={isGoogle ? "123-456-7890" : "account id"}
+            className={field}
+          />
+        </label>
+        {isGoogle ? (
+          <label className="flex flex-col gap-1">
+            <span className="text-[11px] font-medium text-[var(--text-secondary)]">
+              Manager (MCC) ID — optional
+            </span>
+            <input
+              value={loginCustomerId}
+              onChange={(event) => setLoginCustomerId(event.target.value)}
+              placeholder="098-765-4321"
+              className={field}
+            />
+          </label>
+        ) : null}
+      </div>
+      <div className="mt-2 flex items-center gap-2">
+        <button
+          type="submit"
+          disabled={busy || !accountId.trim()}
+          className="rounded px-2 py-1 text-[11px] font-medium text-white transition-opacity hover:opacity-90 disabled:opacity-60"
+          style={{ background: "var(--series-1)" }}
+        >
+          {busy ? "Saving…" : "Save"}
+        </button>
+        <button
+          type="button"
+          onClick={() => setOpen(false)}
+          className="text-[11px] text-[var(--text-muted)] underline underline-offset-2"
+        >
+          Cancel
+        </button>
+      </div>
+      {message ? (
+        <p className="mt-2 text-[11px]" style={{ color: "var(--status-critical)" }}>
+          {message}
+        </p>
+      ) : null}
+    </form>
+  );
+}
+
+/** Shows what the OAuth callback came back with, which otherwise vanished. */
+export function CallbackBanner({ connected, error }: { connected?: string; error?: string }) {
+  const [dismissed, setDismissed] = useState(false);
+  if (dismissed || (!connected && !error)) return null;
+
+  const isError = Boolean(error);
+  return (
+    <div
+      className="flex items-start gap-3 rounded-lg border p-3 hairline"
+      style={{
+        borderColor: isError ? "var(--status-critical)" : "var(--status-good)",
+        background: "var(--surface-1)",
+      }}
+    >
+      <span aria-hidden style={{ color: isError ? "var(--status-critical)" : "var(--status-good)" }}>
+        {isError ? "■" : "●"}
+      </span>
+      <p className="flex-1 text-[13px] leading-relaxed">{error ?? connected}</p>
+      <button
+        type="button"
+        onClick={() => setDismissed(true)}
+        className="text-[11px] text-[var(--text-muted)] underline underline-offset-2"
+      >
+        Dismiss
+      </button>
+    </div>
+  );
+}

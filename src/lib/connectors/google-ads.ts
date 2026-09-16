@@ -97,6 +97,21 @@ export const googleAdsConnector: AdsConnector = {
     );
     const ids = (listed.resourceNames ?? []).map((name) => name.split("/")[1]);
 
+    // An empty list is not "this login has no ads" — it usually means the Cloud
+    // project is not yet cleared to call the API, or the ad account sits under a
+    // manager account that this login reaches indirectly. Guessing wastes an
+    // afternoon, so name all three possibilities.
+    if (ids.length === 0) {
+      throw new Error(
+        "Google returned no accessible ad accounts for this login. Usually one of: " +
+          "(1) the Google Ads API is not enabled on the Cloud project behind these OAuth " +
+          "credentials; (2) Basic access has not been granted to that project yet — apply from " +
+          "its Google Ads API page, brand verification approves in minutes; or (3) your ad " +
+          "account sits under a manager (MCC) account, in which case set the customer ID by hand " +
+          "on the connection and give the manager's ID as the login customer ID.",
+      );
+    }
+
     // listAccessibleCustomers returns ids only; ask each one for its name.
     const accounts: RemoteAccount[] = [];
     for (const id of ids) {
