@@ -153,6 +153,29 @@ its own marketing, which is the thing this tool exists to stop.
 If you seeded demo data before it was removed from the project, `npm run db:purge-demo` deletes it
 and everything derived from it.
 
+### When Google Ads will not connect
+
+Google answers every kind of failure with a bare status code, and the same 403
+covers an unapproved project, a login that cannot see the account, and a missing
+manager ID. Rather than guess:
+
+```bash
+npm run doctor:google
+```
+
+It reads the credentials already stored in the database, works out which API
+version is being served, and runs the account list and a one-row report query —
+printing the URL, the status and Google's own response body for each. No secret
+is printed, so the output is safe to paste. What the last error names is the
+thing to fix:
+
+| Google says | What to do |
+| --- | --- |
+| `DEVELOPER_TOKEN_NOT_APPROVED`, `CUSTOMER_NOT_ENABLED` | The Cloud project is not cleared for live accounts. Apply for Basic access on its Google Ads API page. |
+| `USER_PERMISSION_DENIED` | The Google account you authorised with cannot see this customer ID, or the ad account sits under a manager and the manager's ID has not been set on the connection. |
+| `UNAUTHENTICATED` | The token expired and could not be refreshed. Reconnect. |
+| `NOT_FOUND: Method not found` | The API version is not being served. The doctor walks down to one that is. |
+
 ### Where credentials go
 
 Two different places, depending on the platform:
@@ -309,6 +332,7 @@ Demo connections never call out; they update locally and say so.
 | `npm run typecheck` | `tsc --noEmit` |
 | `npm run db:migrate` | Create or update the schema |
 | `npm run db:purge-demo` | Delete demo data left over from an older install |
+| `npm run doctor:google` | Diagnose a Google Ads connection — see below |
 | `npm run setup` | Create the database |
 
 Demo data covers the inspiration module too: four fictional competitors whose creatives are built

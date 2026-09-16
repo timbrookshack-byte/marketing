@@ -14,7 +14,8 @@
     "typecheck": "tsc --noEmit",
     "db:migrate": "tsx scripts/migrate.ts",
     "setup": "npm run db:migrate",
-    "db:purge-demo": "tsx scripts/purge-demo.ts"
+    "db:purge-demo": "tsx scripts/purge-demo.ts",
+    "doctor:google": "tsx scripts/doctor-google.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.125.0",
