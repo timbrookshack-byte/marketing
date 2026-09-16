@@ -169,9 +169,15 @@ access does not stop a token expiring. Both are needed.
 The publishing status is the one that fails quietly. While it is set to Testing,
 Google expires refresh tokens after seven days: the connection works, then dies
 a week later with no change on this end. Push the consent screen to production
-and reconnect, so the stored token is issued under production rules. Expect an
-"unverified app" warning on the way through — the Ads scope is sensitive, and
-verification is only enforced well beyond single-operator use.
+and reconnect, so the stored token is issued under production rules.
+
+Publishing looks like it needs verification and does not. The dependency runs
+the other way — an app cannot be submitted for verification until it is
+published — so publish first and expect an "unverified app" warning when
+authorising. The Ads scope is sensitive rather than restricted, so an unverified
+app keeps working; verification is only enforced well beyond single-operator
+use. Uploading a logo on the branding screen is what makes brand verification
+mandatory, so leave it empty until everything else works.
 
 Without API access, every report query returns
 `CLOUD_PROJECT_NOT_APPROVED_FOR_PRODUCTION` no matter how clean the auth is.
