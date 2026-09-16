@@ -3,6 +3,64 @@
  * reporting behave the same no matter which network we are talking to.
  */
 
+/**
+ * Pulls the human-readable reason out of an error body.
+ *
+ * Platforms answer failures with a status and a body that says what actually
+ * went wrong — Google names the exact error code, Meta explains the permission.
+ * Reporting only "responded 403" throws that away and leaves the operator
+ * guessing at the one thing the API was willing to tell them.
+ *
+ * HTML error pages are skipped: they bury the message under a stylesheet.
+ */
+export function describeErrorBody(body: string): string {
+  const trimmed = body.trim();
+  if (!trimmed) return "";
+  if (/^<|<html|<!doctype/i.test(trimmed)) return "";
+
+  try {
+    const parsed = JSON.parse(trimmed) as Record<string, unknown>;
+
+    // Google: { error: { message, status, details: [{ errors: [{ errorCode, message }] }] } }
+    const googleError = parsed.error as
+      | {
+          message?: string;
+          status?: string;
+          details?: { errors?: { message?: string; errorCode?: Record<string, string> }[] }[];
+        }
+      | string
+      | undefined;
+
+    if (googleError && typeof googleError === "object") {
+      const specific = googleError.details
+        ?.flatMap((detail) => detail.errors ?? [])
+        .map((entry) => {
+          const code = entry.errorCode ? Object.values(entry.errorCode)[0] : undefined;
+          return [code, entry.message].filter(Boolean).join(": ");
+        })
+        .filter(Boolean);
+
+      if (specific?.length) return specific.join(" | ");
+      if (googleError.message) {
+        return googleError.status ? `${googleError.status}: ${googleError.message}` : googleError.message;
+      }
+    }
+
+    // Meta and most OAuth servers: a flat message or error_description.
+    if (typeof googleError === "string") return googleError;
+    const flat =
+      (parsed.error_description as string) ??
+      (parsed.message as string) ??
+      (parsed.error_message as string);
+    if (flat) return flat;
+  } catch {
+    // Not JSON. A short plain-text body is still worth passing on.
+    if (trimmed.length <= 200) return trimmed;
+  }
+
+  return "";
+}
+
 export class ConnectorError extends Error {
   readonly status: number;
   readonly body: string;
@@ -10,7 +68,8 @@ export class ConnectorError extends Error {
   readonly needsReauth: boolean;
 
   constructor(message: string, status: number, body: string) {
-    super(message);
+    const detail = describeErrorBody(body);
+    super(detail ? `${message} — ${detail}` : message);
     this.name = "ConnectorError";
     this.status = status;
     this.body = body;
