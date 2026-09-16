@@ -275,7 +275,20 @@ export function setCampaignBudget(id: string, dailyBudget: number): void {
   getDb().prepare("UPDATE campaigns SET daily_budget = ? WHERE id = ?").run(dailyBudget, id);
 }
 
-export function upsertAdGroups(groups: (Omit<AdGroup, "id"> & { connectionId: string })[]): void {
+/**
+ * Children whose parent was not in the same snapshot are skipped rather than
+ * inserted.
+ *
+ * A platform can report an ad group whose campaign it did not report — removed
+ * campaigns are the usual reason, and a connector filtering them inconsistently
+ * is a bug worth fixing at the query. But the foreign key turns one such row
+ * into a failed sync for the whole account, which throws away every good row
+ * alongside it. Skipping and counting keeps the sync useful and still says
+ * something was wrong.
+ */
+export function upsertAdGroups(
+  groups: (Omit<AdGroup, "id"> & { connectionId: string })[],
+): { inserted: number; orphaned: number } {
   const db = getDb();
   const stmt = db.prepare(
     `INSERT INTO ad_groups (id, campaign_id, external_id, name, status)
@@ -283,8 +296,16 @@ export function upsertAdGroups(groups: (Omit<AdGroup, "id"> & { connectionId: st
      ON CONFLICT(campaign_id, external_id) DO UPDATE SET
        name = excluded.name, status = excluded.status`,
   );
+  const hasCampaign = db.prepare("SELECT 1 FROM campaigns WHERE id = ?").pluck();
+  let inserted = 0;
+  let orphaned = 0;
+
   const run = db.transaction((items: typeof groups) => {
     for (const g of items) {
+      if (!hasCampaign.get(g.campaignId)) {
+        orphaned += 1;
+        continue;
+      }
       stmt.run({
         id: stableId("adg", g.campaignId, g.externalId),
         campaignId: g.campaignId,
@@ -292,12 +313,15 @@ export function upsertAdGroups(groups: (Omit<AdGroup, "id"> & { connectionId: st
         name: g.name,
         status: g.status,
       });
+      inserted += 1;
     }
   });
   run(groups);
+  return { inserted, orphaned };
 }
 
-export function upsertAds(ads: Omit<Ad, "id">[]): void {
+/** Same orphan handling as ad groups above, for ads whose ad group is missing. */
+export function upsertAds(ads: Omit<Ad, "id">[]): { inserted: number; orphaned: number } {
   const db = getDb();
   const stmt = db.prepare(
     `INSERT INTO ads
@@ -313,12 +337,22 @@ export function upsertAds(ads: Omit<Ad, "id">[]): void {
        landing_page   = excluded.landing_page,
        preview_url    = excluded.preview_url`,
   );
+  const hasAdGroup = db.prepare("SELECT 1 FROM ad_groups WHERE id = ?").pluck();
+  let inserted = 0;
+  let orphaned = 0;
+
   const run = db.transaction((items: Omit<Ad, "id">[]) => {
     for (const a of items) {
+      if (!hasAdGroup.get(a.adGroupId)) {
+        orphaned += 1;
+        continue;
+      }
       stmt.run({ ...a, id: stableId("ad", a.adGroupId, a.externalId) });
+      inserted += 1;
     }
   });
   run(ads);
+  return { inserted, orphaned };
 }
 
 export function listAds(): Ad[] {

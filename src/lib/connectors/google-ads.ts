@@ -166,10 +166,15 @@ export const GAQL = {
     FROM campaign
     WHERE campaign.status != 'REMOVED'
   `,
+  // The parent filters are not redundant. An ad group can be live inside a
+  // removed campaign, and asking only about the ad group returns it — pointing
+  // at a campaign the query above deliberately skipped. On an account with
+  // years of removed campaigns that is a foreign key failure on every sync.
   adGroups: `
     SELECT ad_group.id, ad_group.name, ad_group.status, campaign.id
     FROM ad_group
     WHERE ad_group.status != 'REMOVED'
+      AND campaign.status != 'REMOVED'
   `,
   ads: `
     SELECT ad_group_ad.ad.id, ad_group_ad.ad.name, ad_group_ad.ad.type,
@@ -178,6 +183,8 @@ export const GAQL = {
            ad_group.id, campaign.id
     FROM ad_group_ad
     WHERE ad_group_ad.status != 'REMOVED'
+      AND ad_group.status != 'REMOVED'
+      AND campaign.status != 'REMOVED'
   `,
   // metrics.video_views is likewise gone. Google Ads video views are not used
   // by any analysis here, so the column is reported as zero rather than held up

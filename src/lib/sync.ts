@@ -84,12 +84,14 @@ export async function syncConnection(
   try {
     const ctx = await buildContext(connection);
     let rows = 0;
+    let orphaned = 0;
 
     if (connector.kind === "ads") {
       const snapshot = await connector.fetchEntities(ctx);
       upsertCampaigns(snapshot.campaigns);
-      upsertAdGroups(snapshot.adGroups);
-      upsertAds(snapshot.ads);
+      const groupResult = upsertAdGroups(snapshot.adGroups);
+      const adResult = upsertAds(snapshot.ads);
+      orphaned = groupResult.orphaned + adResult.orphaned;
 
       const metrics = await connector.fetchMetrics(ctx, range);
       rows = upsertMetrics(metrics);
@@ -98,7 +100,15 @@ export async function syncConnection(
       rows = upsertOrders(orders);
     }
 
-    finishSyncRun(runId, "success", rows);
+    // Reported rather than swallowed: rows dropped for a missing parent mean the
+    // connector and the platform disagree about what exists, which is worth
+    // seeing in the sync history even though the sync itself succeeded.
+    finishSyncRun(
+      runId,
+      "success",
+      rows,
+      orphaned > 0 ? `${orphaned} rows skipped — parent campaign or ad group not in this sync` : undefined,
+    );
     markSynced(connectionId);
     setConnectionStatus(connectionId, "connected");
     return { connectionId, platform: connection.platform, status: "success", rowsIngested: rows };
