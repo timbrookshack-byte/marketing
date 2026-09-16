@@ -70,9 +70,9 @@ export const shopifyConnector: SalesConnector = {
    */
   manualSetup: {
     help:
-      "In Shopify admin: Settings -> Apps and sales channels -> Develop apps -> Create an app. " +
-      "Under Configuration give it the read_orders, read_customers and read_products Admin API " +
-      "scopes, then Install app and reveal the Admin API access token.",
+      "Shopify admin -> Settings -> Apps and sales channels -> Develop apps -> your app -> " +
+      "API credentials. Give it the read_orders, read_customers and read_products Admin API " +
+      "scopes under Configuration, then click Install app.",
     fields: [
       {
         key: "shopDomain",
@@ -85,7 +85,9 @@ export const shopifyConnector: SalesConnector = {
         key: "accessToken",
         label: "Admin API access token",
         placeholder: "shpat_...",
-        help: "Shown once when you install the custom app.",
+        help:
+          "Starts with shpat_ and is revealed once, when you install the app. This is NOT the " +
+          "API secret key on the same page (shpss_) — that is a client secret and will be rejected.",
         secret: true,
         target: "credentials",
         required: true,
@@ -96,6 +98,29 @@ export const shopifyConnector: SalesConnector = {
   async fetchOrders(ctx: ConnectorContext, range: DateRange): Promise<OrderDraft[]> {
     const shop = ctx.config.shopDomain as string;
     if (!shop) throw new Error("Shopify connection is missing its shop domain");
+
+    /*
+     * The API credentials page shows several values and only one of them is an
+     * access token. Pasting the API secret key instead is the common mistake,
+     * and Shopify answers it with a bare 401 that explains nothing — so name
+     * the actual problem here rather than passing that confusion along.
+     */
+    const token = ctx.credentials.accessToken ?? "";
+    if (token.startsWith("shpss_")) {
+      throw new Error(
+        "That is the API secret key (shpss_), not an access token. On the same API credentials " +
+          "page, install the app and copy the Admin API access token, which starts with shpat_ " +
+          "and is shown only once. If you created this app in the Dev Dashboard rather than the " +
+          "store admin, it issues no shpat_ at all — create the app under Settings -> Apps and " +
+          "sales channels -> Develop apps instead.",
+      );
+    }
+    if (token && !token.startsWith("shpat_") && !token.startsWith("shpca_")) {
+      throw new Error(
+        `That does not look like a Shopify Admin API access token (expected shpat_, got ` +
+          `"${token.slice(0, 6)}..."). Install the custom app and copy the Admin API access token.`,
+      );
+    }
     const version = (ctx.config.apiVersion as string) ?? "2025-01";
     const endpoint = `https://${shop}/admin/api/${version}/graphql.json`;
 
