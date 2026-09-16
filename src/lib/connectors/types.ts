@@ -31,6 +31,16 @@ export interface OAuthConfig {
   extraAuthParams?: Record<string, string>;
   /** Some platforms want client credentials in the body rather than Basic auth. */
   clientAuth?: "basic" | "body";
+  /**
+   * Platforms that issue short-lived tokens and no refresh token at all — Meta
+   * being the notable one — extend the token they already hold instead. When
+   * set, this runs straight after the code exchange and again in place of a
+   * refresh, so the standard OAuth path never has to know the difference.
+   */
+  extendToken?: (
+    credentials: Credentials,
+    client: { clientId: string; clientSecret: string },
+  ) => Promise<Credentials>;
 }
 
 /** An advertiser/ad account the authenticated user can select after connecting. */

@@ -104,7 +104,11 @@ export async function exchangeCode(
     form,
     headers: authHeaders(config, client),
   });
-  return toCredentials(response);
+  const credentials = toCredentials(response);
+
+  // A platform that hands back a short-lived token upgrades it immediately,
+  // so a connection is never left holding something that dies within the hour.
+  return config.extendToken ? config.extendToken(credentials, client) : credentials;
 }
 
 export async function refreshAccessToken(
@@ -112,6 +116,11 @@ export async function refreshAccessToken(
   client: OAuthClient,
   credentials: Credentials,
 ): Promise<Credentials> {
+  // Platforms with no refresh token extend the one they have instead.
+  if (config.extendToken) {
+    return config.extendToken(credentials, client);
+  }
+
   if (!credentials.refreshToken) {
     throw new ConnectorError("No refresh token stored — reconnect this account", 401, "");
   }

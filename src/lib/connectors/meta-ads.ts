@@ -86,6 +86,51 @@ export const metaAdsConnector: AdsConnector = {
     authorizeUrl: `https://www.facebook.com/${API_VERSION}/dialog/oauth`,
     tokenUrl: `${API_BASE}/oauth/access_token`,
     scopes: ["ads_read", "ads_management", "business_management"],
+    /*
+     * Meta issues no refresh token, and the token the code exchange returns
+     * lasts a couple of hours. Left alone, a connection would die before the
+     * first useful sync and the generic refresh path — which posts
+     * grant_type=refresh_token — would fail with "no refresh token stored".
+     *
+     * `fb_exchange_token` swaps a valid token for a long-lived one of about
+     * sixty days, and works on an already-long-lived token too, so the same
+     * call serves both the initial upgrade and every later extension.
+     */
+    extendToken: async (credentials, client) => {
+      const current = credentials.accessToken;
+      if (!current) {
+        throw new Error("No Meta token to extend — reconnect the account.");
+      }
+
+      const response = await request<{
+        access_token?: string;
+        expires_in?: number;
+        error?: { message?: string };
+      }>(`${API_BASE}/oauth/access_token`, {
+        query: {
+          grant_type: "fb_exchange_token",
+          client_id: client.clientId,
+          client_secret: client.clientSecret,
+          fb_exchange_token: current,
+        },
+      });
+
+      if (!response.access_token) {
+        throw new Error(
+          `Meta would not extend the access token${
+            response.error?.message ? `: ${response.error.message}` : ""
+          }. Reconnect the account.`,
+        );
+      }
+
+      return {
+        ...credentials,
+        accessToken: response.access_token,
+        // Meta omits expires_in on some long-lived tokens; treat that as the
+        // documented sixty days rather than as "never expires".
+        expiresAt: Date.now() + (response.expires_in ?? 60 * 24 * 3600) * 1000,
+      };
+    },
   },
 
   async listAccounts(ctx): Promise<RemoteAccount[]> {
