@@ -156,10 +156,13 @@ export const GAQL = {
     FROM customer
     LIMIT 1
   `,
+  // campaign.start_date and campaign.end_date were dropped from the resource;
+  // v25 rejects the whole query for naming them. Nothing here depends on the
+  // dates, so they are simply not requested — see the note above the connector
+  // about finding what replaced them.
   campaigns: `
     SELECT campaign.id, campaign.name, campaign.status, campaign.advertising_channel_type,
-           campaign.start_date, campaign.end_date, campaign_budget.amount_micros,
-           customer.currency_code
+           campaign_budget.amount_micros, customer.currency_code
     FROM campaign
     WHERE campaign.status != 'REMOVED'
   `,
@@ -176,11 +179,14 @@ export const GAQL = {
     FROM ad_group_ad
     WHERE ad_group_ad.status != 'REMOVED'
   `,
+  // metrics.video_views is likewise gone. Google Ads video views are not used
+  // by any analysis here, so the column is reported as zero rather than held up
+  // waiting for its replacement.
   metrics: (range: DateRange) => `
     SELECT segments.date, campaign.id, ad_group.id, ad_group_ad.ad.id,
            customer.currency_code,
            metrics.impressions, metrics.clicks, metrics.cost_micros,
-           metrics.conversions, metrics.conversions_value, metrics.video_views
+           metrics.conversions, metrics.conversions_value
     FROM ad_group_ad
     WHERE segments.date BETWEEN '${range.start}' AND '${range.end}'
   `,
@@ -263,8 +269,6 @@ export const googleAdsConnector: AdsConnector = {
         name: string;
         status: string;
         advertisingChannelType?: string;
-        startDate?: string;
-        endDate?: string;
       };
       campaignBudget?: { amountMicros?: string };
       customer?: { currencyCode?: string };
@@ -283,8 +287,8 @@ export const googleAdsConnector: AdsConnector = {
         ? Number(row.campaignBudget.amountMicros) / MICROS
         : null,
       currency: currency as string,
-      startDate: row.campaign.startDate ?? null,
-      endDate: row.campaign.endDate ?? null,
+      startDate: null,
+      endDate: null,
     }));
 
     const groupRows = await gaql<{
@@ -355,7 +359,6 @@ export const googleAdsConnector: AdsConnector = {
         costMicros?: string;
         conversions?: number;
         conversionsValue?: number;
-        videoViews?: string;
       };
     }>(ctx, GAQL.metrics(range));
 
@@ -371,7 +374,7 @@ export const googleAdsConnector: AdsConnector = {
       spend: Number(row.metrics.costMicros ?? 0) / MICROS,
       platformConversions: Number(row.metrics.conversions ?? 0),
       platformRevenue: Number(row.metrics.conversionsValue ?? 0),
-      videoViews: Number(row.metrics.videoViews ?? 0),
+      videoViews: 0,
       frequency: 0,
       currency: row.customer?.currencyCode ?? "USD",
     }));

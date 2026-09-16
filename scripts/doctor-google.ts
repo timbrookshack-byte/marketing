@@ -62,7 +62,7 @@ function summarise(body: string): string {
   const trimmed = body.trim();
   if (!trimmed) return "(empty body)";
   if (/^<|<!doctype/i.test(trimmed)) return "(HTML error page — the frontend did not route this path)";
-  return trimmed.length > 1200 ? `${trimmed.slice(0, 1200)}…` : trimmed;
+  return trimmed.length > 2000 ? `${trimmed.slice(0, 2000)}…` : trimmed;
 }
 
 async function call(
@@ -192,6 +192,8 @@ async function main(): Promise<void> {
   const url = `${HOST}/${live}/customers/${connection.externalAccountId.replace(/-/g, "")}/googleAds:searchStream`;
   const failures: string[] = [];
 
+  const retired = new Set<string>();
+
   for (const [name, query] of [
     ["customer", GAQL.customer],
     ["campaigns", GAQL.campaigns],
@@ -199,12 +201,19 @@ async function main(): Promise<void> {
     ["ads", GAQL.ads],
     [`metrics (${range.start} to ${range.end})`, GAQL.metrics(range)],
   ] as const) {
-    const { status } = await call(`${name}:`, url, {
+    const { status, body } = await call(`${name}:`, url, {
       method: "POST",
       headers: { ...headers, "content-type": "application/json" },
       body: JSON.stringify({ query }),
     });
-    if (status !== 200) failures.push(name);
+    if (status !== 200) {
+      failures.push(name);
+      // Google names the offending fields in quotes. Collect them so the next
+      // section can go and ask what took their place.
+      if (body.includes("UNRECOGNIZED_FIELD")) {
+        for (const match of body.matchAll(/'([a-z][a-z_]*\.[a-z_.]+)'/g)) retired.add(match[1]);
+      }
+    }
     console.log("");
   }
 
@@ -213,6 +222,31 @@ async function main(): Promise<void> {
       ? "All queries succeeded. A sync should now work."
       : `Failed: ${failures.join(", ")}. The message above each one names the cause.`,
   );
+
+  // Knowing a field is gone does not say what replaced it, and the reference
+  // documentation only covers versions Google is still publishing. The API
+  // will describe its own schema, which is the one answer that cannot be stale.
+  if (retired.size > 0) {
+    heading("What exists now, in place of the fields Google rejected");
+
+    for (const field of retired) {
+      const [resource, ...rest] = field.split(".");
+      const keyword = rest[rest.length - 1].split("_").pop() ?? "";
+      await call(
+        `${field} is gone — other ${resource} fields matching "${keyword}":`,
+        `${HOST}/${live}/googleAdsFields:search`,
+        {
+          method: "POST",
+          headers: { ...headers, "content-type": "application/json" },
+          body: JSON.stringify({
+            query: `SELECT name, selectable, data_type FROM google_ads_field ` +
+                   `WHERE name LIKE '${resource}.%${keyword}%'`,
+          }),
+        },
+      );
+      console.log("");
+    }
+  }
   console.log("\nDone. Paste everything above — no secrets are printed.");
 }
 
