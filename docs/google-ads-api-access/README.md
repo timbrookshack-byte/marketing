@@ -4,12 +4,8 @@
 application for Basic access to the Google Ads API, in answer to *"Provide
 documentation of your tool"*.
 
-Three placeholders must be filled in before it is submitted — they are the facts
-only the business can confirm, and they appear in the table on page 1:
-
-- `[LEGAL COMPANY NAME]`
-- `[STOREFRONT DOMAIN]`
-- `[CONTACT EMAIL]`
+The company details on page 1 — entity, storefront, contact address and the
+Google Ads account IDs — are filled in and the document is ready to submit.
 
 ## Regenerating it
 

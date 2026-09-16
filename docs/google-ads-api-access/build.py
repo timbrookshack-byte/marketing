@@ -43,7 +43,7 @@ doc = BaseDocTemplate(OUT, pagesize=A4,
                       leftMargin=20*mm, rightMargin=20*mm,
                       topMargin=18*mm, bottomMargin=17*mm,
                       title="360 Marketing — Tool Design Document",
-                      author="The Furniture Shack",
+                      author="The Furniture Shack Pty Ltd",
                       subject="Google Ads API access application")
 
 LANDSCAPE = (A4[1], A4[0])
@@ -135,9 +135,9 @@ S.append(Paragraph("Tool design document, submitted in support of an application
                    "Basic access to the Google Ads API.", LEAD))
 
 keyvalue([
-    ("Company", "[LEGAL COMPANY NAME] trading as The Furniture Shack"),
-    ("Websites advertised", "[STOREFRONT DOMAIN] — Shopify store thefurnitureshack.myshopify.com"),
-    ("Contact", "[CONTACT EMAIL]"),
+    ("Company", "The Furniture Shack Pty Ltd"),
+    ("Websites advertised", "https://www.thefurnitureshack.com.au/ — a Shopify store, thefurnitureshack.myshopify.com"),
+    ("Contact", "office@thefurnitureshack.com.au"),
     ("Google Ads manager account", "235-908-4368"),
     ("Google Ads accounts accessed", "821-497-7043 (The Furniture Shack), 108-381-7641"),
     ("Tool name", "360 Marketing"),
