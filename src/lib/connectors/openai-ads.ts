@@ -1,4 +1,4 @@
-import { bearer, request } from "./http";
+import { ConnectorError, bearer, request } from "./http";
 import type { AdsConnector, ConnectorContext, EntitySnapshot, RemoteAccount } from "./types";
 import type { DateRange, MetricRow } from "../types";
 import { stableId } from "../util";
@@ -60,6 +60,38 @@ function mapStatus(value: string | undefined): "active" | "paused" | "ended" | "
   return STATUS_MAP[(value ?? "").toLowerCase()] ?? "paused";
 }
 
+/**
+ * A 404 here means something different from a 404 anywhere else in the portal.
+ *
+ * Every other connector is written against published documentation, so a
+ * missing path is a bug or a version that moved. This one is written against a
+ * contract that was declared rather than documented, so a 404 is the expected
+ * outcome of a guess being wrong — and reporting it as a bare status invites an
+ * afternoon of checking credentials that are fine. It says so instead.
+ */
+async function adsRequest<T>(
+  ctx: ConnectorContext,
+  path: string,
+  contract: keyof typeof EXPECTED_SHAPE,
+  options: Parameters<typeof request>[1] = {},
+): Promise<T> {
+  const url = `${API_BASE}${path}`;
+  try {
+    return await request<T>(url, { headers: headers(ctx), ...options });
+  } catch (error) {
+    if (error instanceof ConnectorError && error.status === 404) {
+      throw new Error(
+        `OpenAI Ads: ${url} does not exist. This connector is provisional — it was written ` +
+          "against a declared contract rather than published documentation, and a 404 means the " +
+          `real API does not use this path. It expects: ${EXPECTED_SHAPE[contract]} — set ` +
+          "OPENAI_ADS_API_BASE to the real base URL if you have the documentation, otherwise " +
+          "disconnect OpenAI Ads until its API is published. Credentials are not the problem here.",
+      );
+    }
+    throw error;
+  }
+}
+
 interface Envelope<T> {
   data?: T[];
 }
@@ -87,9 +119,9 @@ export const openAiAdsConnector: AdsConnector = {
     "EXPECTED_SHAPE against the live API before trusting production numbers.",
 
   async listAccounts(ctx): Promise<RemoteAccount[]> {
-    const response = await request<
+    const response = await adsRequest<
       Envelope<{ id: string; name?: string; currency?: string; timezone?: string }>
-    >(`${API_BASE}/accounts`, { headers: headers(ctx) });
+    >(ctx, "/accounts", "accounts");
     return (response.data ?? []).map((a) => ({
       id: a.id,
       name: a.name ?? a.id,
@@ -102,7 +134,7 @@ export const openAiAdsConnector: AdsConnector = {
     const id = accountId(ctx);
     const currency = (ctx.config.currency as string) ?? "USD";
 
-    const campaignResponse = await request<
+    const campaignResponse = await adsRequest<
       Envelope<{
         id: string;
         name: string;
@@ -112,7 +144,7 @@ export const openAiAdsConnector: AdsConnector = {
         start_date?: string;
         end_date?: string;
       }>
-    >(`${API_BASE}/accounts/${id}/campaigns`, { headers: headers(ctx) });
+    >(ctx, `/accounts/${id}/campaigns`, "campaigns");
 
     const campaigns = (campaignResponse.data ?? []).map((c) => ({
       connectionId: ctx.connectionId,
@@ -127,7 +159,7 @@ export const openAiAdsConnector: AdsConnector = {
       endDate: c.end_date ?? null,
     }));
 
-    const creativeResponse = await request<
+    const creativeResponse = await adsRequest<
       Envelope<{
         id: string;
         campaign_id: string;
@@ -140,7 +172,7 @@ export const openAiAdsConnector: AdsConnector = {
         landing_page?: string;
         format?: string;
       }>
-    >(`${API_BASE}/accounts/${id}/creatives`, { headers: headers(ctx) });
+    >(ctx, `/accounts/${id}/creatives`, "creatives");
 
     const creatives = creativeResponse.data ?? [];
 
@@ -188,7 +220,7 @@ export const openAiAdsConnector: AdsConnector = {
 
   async fetchMetrics(ctx, range: DateRange): Promise<MetricRow[]> {
     const id = accountId(ctx);
-    const response = await request<
+    const response = await adsRequest<
       Envelope<{
         date: string;
         campaign_id: string;
@@ -201,8 +233,7 @@ export const openAiAdsConnector: AdsConnector = {
         conversion_value?: number;
         currency?: string;
       }>
-    >(`${API_BASE}/accounts/${id}/reports`, {
-      headers: headers(ctx),
+    >(ctx, `/accounts/${id}/reports`, "reporting", {
       query: {
         start_date: range.start,
         end_date: range.end,
