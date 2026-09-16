@@ -24,28 +24,53 @@ const MICROS = 1_000_000;
 /**
  * Resolving the API version.
  *
- * Google now ships roughly monthly, promotes four major versions a year, and
- * sunsets each about a year after release — v21 went dark on 5 August 2026 and
- * v22 follows on 7 October. A version pinned in source is therefore a bug with
- * a delivery date, and it fails as a bare 404 from a host that is plainly
- * reachable, which tells the operator nothing.
+ * Google ships roughly monthly, promotes four major versions a year, and sunsets
+ * each about a year after release. A version pinned in source is therefore a bug
+ * with a delivery date, so the version is discovered instead.
  *
- * So the version is discovered: candidates are tried newest-first until one
- * answers with anything other than 404. A 401 or 403 still means the path
- * exists — that is an auth problem, not a missing version — so any non-404
- * settles it. The result is cached for the process.
+ * Two different 404s have to be told apart, because they look identical from the
+ * outside and only one of them is about the version:
  *
- * GOOGLE_ADS_API_VERSION pins it explicitly and skips the probe.
+ *  - The frontend does not recognise the version prefix at all and answers with
+ *    an HTML error page. That version is gone, or not yet routed.
+ *  - The frontend routes the prefix but the service behind it does not serve
+ *    that version yet, and answers `NOT_FOUND: Method not found.` as JSON once
+ *    the caller is authenticated. Google provisions the next version's route
+ *    ahead of launching it, so the newest prefix that answers unauthenticated
+ *    is regularly one that no real request can use.
+ *
+ * Both mean "try an older version", so both are treated the same way and the
+ * loop keeps going. A 401 or 403 is the opposite: the method resolved and only
+ * the caller was refused, so that version is live and the problem is auth.
+ *
+ * GOOGLE_ADS_API_VERSION pins the first version tried. It is a starting point
+ * rather than a promise — if it turns out not to serve, discovery carries on
+ * from the rest of the list instead of failing, since a pin that has gone stale
+ * is exactly the situation this is here to survive.
  */
 const CANDIDATE_VERSIONS = ["v26", "v25", "v24", "v23", "v22"];
 
-let resolvedVersion: string | null = process.env.GOOGLE_ADS_API_VERSION ?? null;
+/** Set only once a version has actually answered, so a failure is never cached. */
+let resolvedVersion: string | null = null;
+
+/**
+ * listAccessibleCustomers takes no arguments and needs no account, so nothing
+ * about the request can be wrong. A 404 from it is always about the version.
+ */
+function versionNotServed(error: unknown): boolean {
+  return error instanceof ConnectorError && error.status === 404;
+}
 
 async function apiBase(ctx: ConnectorContext): Promise<string> {
   if (resolvedVersion) return `${HOST}/${resolvedVersion}`;
 
+  const pinned = process.env.GOOGLE_ADS_API_VERSION?.trim();
+  const candidates = pinned
+    ? [pinned, ...CANDIDATE_VERSIONS.filter((v) => v !== pinned)]
+    : CANDIDATE_VERSIONS;
+
   const rejected: string[] = [];
-  for (const version of CANDIDATE_VERSIONS) {
+  for (const version of candidates) {
     try {
       await request(`${HOST}/${version}/customers:listAccessibleCustomers`, {
         headers: headers(ctx),
@@ -54,20 +79,21 @@ async function apiBase(ctx: ConnectorContext): Promise<string> {
       resolvedVersion = version;
       return `${HOST}/${version}`;
     } catch (error) {
-      if (error instanceof ConnectorError && error.status === 404) {
+      if (versionNotServed(error)) {
         rejected.push(version);
         continue;
       }
-      // Reached the endpoint and got a real answer: the version is live.
+      // Reached the method and got a real answer — including a refusal. The
+      // version is live and whatever went wrong is the caller's to fix.
       resolvedVersion = version;
       return `${HOST}/${version}`;
     }
   }
 
   throw new Error(
-    `None of the Google Ads API versions this connector knows about are live (tried ${rejected.join(", ")}). ` +
-      "Google has moved on again — set GOOGLE_ADS_API_VERSION to the current one from " +
-      "developers.google.com/google-ads/api/docs/sunset-dates.",
+    `None of the Google Ads API versions this connector knows about are serving requests ` +
+      `(tried ${rejected.join(", ")}). Google has moved on again — set GOOGLE_ADS_API_VERSION ` +
+      "to the current one from developers.google.com/google-ads/api/docs/sunset-dates.",
   );
 }
 

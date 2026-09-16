@@ -143,8 +143,11 @@ export async function request<T>(url: string, options: RequestOptions = {}): Pro
       const text = await response.text();
 
       if (!response.ok) {
+        // Path, not the full URL: query strings carry access tokens on some
+        // platforms, and an error message ends up in logs and on screen.
+        const { host, pathname } = new URL(target);
         const error = new ConnectorError(
-          `${method} ${new URL(target).host} responded ${response.status}`,
+          `${method} ${host}${pathname} responded ${response.status}`,
           response.status,
           text.slice(0, 2000),
         );
