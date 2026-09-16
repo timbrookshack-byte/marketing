@@ -116,7 +116,7 @@ export function formatDateShort(date: string): string {
   });
 }
 
-/** Deterministic PRNG so demo data is reproducible across restarts. */
+/** Deterministic PRNG, seeded so repeated runs agree. */
 export function mulberry32(seed: number): () => number {
   let a = seed >>> 0;
   return () => {

@@ -29,7 +29,6 @@ export type AuthType = "oauth2" | "api_key" | "basic";
 export type ConnectionStatus =
   | "disconnected"
   | "connected"
-  | "demo"
   | "error"
   | "needs_reauth";
 

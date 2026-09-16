@@ -21,7 +21,7 @@ export default function OverviewPage() {
     return (
       <EmptyState
         title="Nothing connected yet"
-        body="Connect an ad account and a store, or load the demo account to see what the analysis does before wiring anything up."
+        body="Connect an ad account and a store to start. Nothing here is estimated or simulated — every number comes from an account you have connected."
         action={<PrimaryLink href="/connections">Go to connections</PrimaryLink>}
       />
     );

@@ -3,6 +3,7 @@ import { getOAuthClient, isExpired, refreshAccessToken } from "./connectors/oaut
 import { ConnectorError } from "./connectors/http";
 import type { ConnectorContext } from "./connectors/types";
 import {
+  CredentialsUnreadableError,
   finishSyncRun,
   getConnection,
   listConnections,
@@ -77,18 +78,6 @@ export async function syncConnection(
     return { connectionId, platform: "unknown", status: "error", rowsIngested: 0, error: "Connection not found" };
   }
 
-  // Demo connections hold generated history; re-syncing them would call a live
-  // API they have no credentials for.
-  if (connection.status === "demo") {
-    return {
-      connectionId,
-      platform: connection.platform,
-      status: "skipped",
-      rowsIngested: 0,
-      error: "Demo connection — data is generated, not fetched",
-    };
-  }
-
   const runId = startSyncRun(connectionId);
   const connector = getConnector(connection.platform);
 
@@ -116,11 +105,10 @@ export async function syncConnection(
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     finishSyncRun(runId, "error", 0, message);
-    setConnectionStatus(
-      connectionId,
-      error instanceof ConnectorError && error.needsReauth ? "needs_reauth" : "error",
-      message,
-    );
+    const needsReauth =
+      error instanceof CredentialsUnreadableError ||
+      (error instanceof ConnectorError && error.needsReauth);
+    setConnectionStatus(connectionId, needsReauth ? "needs_reauth" : "error", message);
     return {
       connectionId,
       platform: connection.platform,

@@ -1,13 +1,12 @@
 import { catalog, channelColor } from "@/lib/connectors/registry";
 import { listConnections, listSyncRuns } from "@/lib/repo";
 import { Card, ChannelDot, TableWrap, Td, Th } from "@/components/ui";
-import { ConnectionControls, DemoDataButton, ManualConnectForm, SyncAllButton } from "./controls";
+import { ConnectionControls, ManualConnectForm, SyncAllButton } from "./controls";
 
 export const dynamic = "force-dynamic";
 
 const STATUS_COPY: Record<string, { label: string; color: string; icon: string }> = {
   connected: { label: "Connected", color: "var(--status-good)", icon: "●" },
-  demo: { label: "Demo data", color: "var(--series-1)", icon: "◐" },
   error: { label: "Last sync failed", color: "var(--status-critical)", icon: "■" },
   needs_reauth: { label: "Reconnect needed", color: "var(--status-warning)", icon: "▲" },
   disconnected: { label: "Not connected", color: "var(--text-muted)", icon: "○" },
@@ -32,10 +31,7 @@ export default function ConnectionsPage() {
             adding one never changes how the analysis reads.
           </p>
         </div>
-        <div className="flex gap-2">
-          <DemoDataButton hasData={connections.length > 0} />
-          <SyncAllButton />
-        </div>
+        <SyncAllButton />
       </div>
 
       <Card

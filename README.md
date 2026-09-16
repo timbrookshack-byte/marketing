@@ -21,8 +21,7 @@ a new file and one line in the registry — nothing downstream changes.
 
 \* OpenAI Ads is **provisional** — see [below](#a-note-on-openai-ads).
 
-Every platform in both rows appears in the UI, carries demo data, and is included in
-cross-channel analysis. The ones without a live fetch throw a specific, actionable error rather
+Every platform in both rows appears in the UI and is included in cross-channel analysis. The ones without a live fetch throw a specific, actionable error rather
 than silently returning nothing, so "no data" is never ambiguous.
 
 **Closes the loop on revenue.** Store orders are matched back to campaigns by click id
@@ -121,9 +120,12 @@ Needs **Node 20.9 or newer** (Next 16 requires it). `node -v` to check.
 
 ```bash
 npm install
-npm run setup      # create the database and load the demo account
+npm run setup      # create the database
 npm run dev        # http://localhost:3000
 ```
+
+There is no demo or sample data. Every number in the portal comes from an account you have
+connected, so nothing on screen is ever a simulation you might mistake for real spend.
 
 ### On Windows
 
@@ -145,11 +147,11 @@ nvm install 22
 nvm use 22
 ```
 
-`npm run setup` generates 90 days of realistic demo data across five channels and a store, so the
-whole analysis works before you connect anything. Each demo campaign is built to trigger a
-specific diagnostic — see `src/lib/demo.ts` for which.
+Connect a revenue source first — Shopify or Stripe. Without real orders every channel is judged on
+its own marketing, which is the thing this tool exists to stop.
 
-To start empty instead: `npm run db:migrate`, then connect real accounts.
+If you seeded demo data before it was removed from the project, `npm run db:purge-demo` deletes it
+and everything derived from it.
 
 ### Where credentials go
 
@@ -276,8 +278,7 @@ OPENAI_ADS_API_KEY=...
 
 When the real API ships, the work is renaming fields in three mapping functions. Nothing else in
 the portal is affected, because analytics only ever sees the normalised row. The connections page
-marks it as unverified rather than implying otherwise, and demo mode is unaffected — so the
-channel is modelled alongside the others from day one.
+marks it as unverified rather than implying otherwise, so the channel is never silently trusted.
 
 ---
 
@@ -303,8 +304,8 @@ Demo connections never call out; they update locally and say so.
 | `npm run build` / `npm start` | Production build and serve |
 | `npm run typecheck` | `tsc --noEmit` |
 | `npm run db:migrate` | Create or update the schema |
-| `npm run db:seed` | Load demo data (`-- --force` to regenerate) |
-| `npm run setup` | Both of the above |
+| `npm run db:purge-demo` | Delete demo data left over from an older install |
+| `npm run setup` | Create the database |
 
 Demo data covers the inspiration module too: four fictional competitors whose creatives are built
 to exercise the scoring — a concept three brands have all kept live for months, one iterated into

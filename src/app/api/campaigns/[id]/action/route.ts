@@ -21,8 +21,7 @@ export const dynamic = "force-dynamic";
  *   applied  — the change went through on the platform
  *   recorded — the connector cannot write yet, so the intent is logged here
  *   failed   — the platform rejected it, with its reason
- *
- * Demo connections never call out; they update locally and say so.
+
  */
 export async function POST(request: Request, context: { params: Promise<{ id: string }> }) {
   const { id } = await context.params;
@@ -46,23 +45,6 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
     if (action === "pause") setCampaignStatus(campaign.id, "paused");
     else setCampaignBudget(campaign.id, Number(body.dailyBudget));
   };
-
-  if (connection.status === "demo") {
-    applyLocally();
-    logAction({
-      connectionId: connection.id,
-      scope: "campaign",
-      targetId: campaign.id,
-      action,
-      payload: { dailyBudget: body.dailyBudget },
-      result: "recorded",
-      detail: "Demo account — changed here only, nothing sent to a live platform",
-    });
-    return NextResponse.json({
-      ok: true,
-      detail: "Updated in the demo account. Nothing was sent to a live ad platform.",
-    });
-  }
 
   try {
     const connector = getAdsConnector(campaign.platform);

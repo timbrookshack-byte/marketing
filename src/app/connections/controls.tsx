@@ -240,32 +240,3 @@ export function SyncAllButton() {
     </div>
   );
 }
-
-export function DemoDataButton({ hasData }: { hasData: boolean }) {
-  const router = useRouter();
-  const [pending, startTransition] = useTransition();
-
-  return (
-    <button
-      type="button"
-      disabled={pending}
-      onClick={() => {
-        if (
-          hasData &&
-          !window.confirm(
-            "Regenerate the demo account? This replaces the existing demo connections and their data.",
-          )
-        ) {
-          return;
-        }
-        startTransition(async () => {
-          await fetch("/api/demo", { method: "POST" });
-          router.refresh();
-        });
-      }}
-      className="rounded-lg border px-3 py-1.5 text-[13px] font-medium transition-colors hover:bg-[var(--surface-sunken)] disabled:opacity-60 hairline"
-    >
-      {pending ? "Generating…" : hasData ? "Regenerate demo data" : "Load demo account"}
-    </button>
-  );
-}

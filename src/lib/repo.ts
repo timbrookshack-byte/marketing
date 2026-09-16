@@ -139,6 +139,27 @@ export function saveCredentials(connectionId: string, credentials: Credentials):
     .run(encryptJson(credentials), connectionId);
 }
 
+/**
+ * Raised when a connection holds credentials that cannot be decrypted, which in
+ * practice means CREDENTIALS_KEY changed after the account was connected —
+ * usually by being set for the first time, since development derives a
+ * throwaway key when it is absent.
+ *
+ * This is deliberately distinct from "no credentials stored". Collapsing the
+ * two into null made a changed key look identical to a fresh install: the
+ * account quietly reverted to unconnected and the real cause went unsaid.
+ */
+export class CredentialsUnreadableError extends Error {
+  constructor() {
+    super(
+      "Stored credentials could not be decrypted. CREDENTIALS_KEY has changed since this account " +
+        "was connected, so the saved token is unreadable. Reconnect the account to store it under " +
+        "the current key.",
+    );
+    this.name = "CredentialsUnreadableError";
+  }
+}
+
 export function loadCredentials(connectionId: string): Credentials | null {
   const row = getDb()
     .prepare("SELECT credentials FROM connections WHERE id = ?")
@@ -147,7 +168,7 @@ export function loadCredentials(connectionId: string): Credentials | null {
   try {
     return decryptJson<Credentials>(row.credentials);
   } catch {
-    return null;
+    throw new CredentialsUnreadableError();
   }
 }
 

@@ -19,10 +19,7 @@ import { stableId } from "../util";
  * `EXPECTED_SHAPE` below. When the real API ships, the only work is renaming
  * fields in the three `map*` functions — the rest of the portal is unaffected
  * because it only ever sees the normalised `MetricRow`.
- *
- * Until then this platform still works end to end in demo mode, so the
- * sponsored-placement channel is modelled alongside the others rather than
- * missing from the analysis.
+
  */
 
 const API_BASE = process.env.OPENAI_ADS_API_BASE ?? "https://api.openai.com/v1/ads";
@@ -87,7 +84,7 @@ export const openAiAdsConnector: AdsConnector = {
   provisional: true,
   provisionalNote:
     "Written against a declared contract, not published documentation. Verify the field names in " +
-    "EXPECTED_SHAPE against the live API before trusting production numbers; demo mode is unaffected.",
+    "EXPECTED_SHAPE against the live API before trusting production numbers.",
 
   async listAccounts(ctx): Promise<RemoteAccount[]> {
     const response = await request<

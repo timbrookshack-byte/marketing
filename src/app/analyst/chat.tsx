@@ -35,7 +35,7 @@ export function AnalystChat({
   if (!hasData) {
     return (
       <p className="text-[13px] text-[var(--text-secondary)]">
-        There is no data to ask about yet. Connect an account or load the demo data first.
+        There is no data to ask about yet. Connect an account and run a sync first.
       </p>
     );
   }

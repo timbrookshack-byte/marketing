@@ -5,9 +5,9 @@ import type { PlatformId } from "../types";
  * Networks the portal knows about but does not yet pull live data from.
  *
  * They are first-class in every other respect — they appear in the channel
- * picker, carry demo data, and are included in cross-channel analysis — but
- * their live fetch throws a specific, actionable error instead of silently
- * returning nothing. That keeps "no data" from ever being ambiguous.
+ * picker and are included in cross-channel analysis — but their live fetch
+ * throws a specific, actionable error instead of silently returning nothing.
+ * That keeps "no data" from ever being ambiguous.
  *
  * Adding a real implementation means writing the connector file and replacing
  * the entry here; nothing else in the app changes.
