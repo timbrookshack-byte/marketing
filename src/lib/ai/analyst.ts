@@ -5,6 +5,7 @@ import { CreativeWorkshopSchema, PortfolioAnalysisSchema } from "./schemas";
 import type { CreativeWorkshop, PortfolioAnalysis } from "./schemas";
 import { buildSnapshot, summariseForModel, type ModelSummary, type PortfolioSnapshot } from "../analytics";
 import { platformLabel } from "../connectors/registry";
+import { queryOrders } from "../repo";
 import type { PlatformId, Recommendation } from "../types";
 
 /**
@@ -23,7 +24,8 @@ const ANALYST_SYSTEM = `You are the performance marketing analyst for a 360 Mark
 
 How to work:
 - The metrics you are given are already computed from connected ad accounts and real store orders. Use them as given. Never recompute or estimate a metric that has been provided, and never invent one that has not.
-- Attributed revenue comes from matched store orders. Platform-reported revenue is each network marking its own homework, and two networks will claim the same sale. When they disagree, trust the store and say the gap exists.
+- Three revenue numbers exist here and they are not interchangeable. Store revenue is every order the shop recorded: it is complete and it is the answer to "what did we sell". Attributed revenue is the part of it that could be traced to an ad, which is a floor, not a total. Platform-reported revenue is each network marking its own homework, and two networks will claim the same sale.
+- Weak attribution never makes store revenue unreliable — the orders came from the store's own records. If someone asks what was sold, answer with store revenue and use get_store_sales to get it. Say separately how much of it could be traced. Never send someone elsewhere for a number this portal holds.
 - Distinguish "this is losing money" from "this has not proven itself yet". A campaign with 4 orders is not evidence. Say when a sample is too small to act on instead of ranking it confidently.
 - Rank by money, not by tidiness. A 4% improvement on the largest line beats a 40% improvement on a rounding error.
 - Never recommend an action whose evidence you cannot point to in the data provided.
@@ -247,6 +249,7 @@ export async function askAnalyst(input: {
 
   const snapshot = buildSnapshot(input.days ?? 30);
   const summary = summariseForModel(snapshot, { campaigns: 15, ads: 8 });
+  const today = new Date().toISOString().slice(0, 10);
 
   const campaignDetail = betaZodTool({
     name: "get_campaign_detail",
@@ -314,6 +317,53 @@ export async function askAnalyst(input: {
     },
   });
 
+  const storeSalesTool = betaZodTool({
+    name: "get_store_sales",
+    description:
+      "Total sales the store recorded over any date range, split into what could be traced to an ad and what could not. " +
+      "This is the answer to questions about revenue, sales or orders overall, as opposed to ad performance. " +
+      "Use it whenever a question names a period — a month, a week, 'so far', or specific dates.",
+    inputSchema: z.object({
+      start: z.string().describe("First day, YYYY-MM-DD."),
+      end: z.string().describe("Last day, YYYY-MM-DD. Days after today simply have no orders yet."),
+    }),
+    run: ({ start, end }) => {
+      const orders = queryOrders({ start, end });
+      const traceable = orders.filter((order) => order.clickId || order.utmCampaign || order.utmSource);
+      const sum = (rows: typeof orders) => rows.reduce((total, order) => total + order.revenue, 0);
+
+      const byDay = new Map<string, { orders: number; revenue: number }>();
+      for (const order of orders) {
+        const day = order.orderedAt.slice(0, 10);
+        const bucket = byDay.get(day) ?? { orders: 0, revenue: 0 };
+        bucket.orders += 1;
+        bucket.revenue += order.revenue;
+        byDay.set(day, bucket);
+      }
+
+      return JSON.stringify(
+        {
+          range: { start, end },
+          storeRevenue: Math.round(sum(orders)),
+          storeOrders: orders.length,
+          traceableToAnAd: { revenue: Math.round(sum(traceable)), orders: traceable.length },
+          notTraceable: {
+            revenue: Math.round(sum(orders) - sum(traceable)),
+            orders: orders.length - traceable.length,
+          },
+          note:
+            "storeRevenue is every order the shop recorded in this range and is the total. The split " +
+            "says how much could be linked to an ad; it does not make the total less certain.",
+          daily: Object.fromEntries(
+            [...byDay.entries()].sort().map(([day, v]) => [day, { orders: v.orders, revenue: Math.round(v.revenue) }]),
+          ),
+        },
+        null,
+        2,
+      );
+    },
+  });
+
   const attributionTool = betaZodTool({
     name: "get_attribution_breakdown",
     description:
@@ -339,7 +389,12 @@ export async function askAnalyst(input: {
         type: "text",
         text:
           ANALYST_SYSTEM +
-          "\n\nAnswer the operator's question directly in prose. Lead with the answer, then the evidence. Use the tools when you need detail beyond the summary. Keep it under 300 words unless the question genuinely needs more.",
+          `\n\nToday is ${today}. A period that has not finished yet is partial, not missing: ` +
+          "say how far through it the figures run. Days in the future are not a gap in the data.\n\n" +
+          "Answer the operator's question directly in prose. Lead with the answer, then the evidence. " +
+          "Use the tools when you need detail beyond the summary — get_store_sales in particular is not " +
+          "limited to the summary's window and will answer for any dates. Keep it under 300 words unless " +
+          "the question genuinely needs more.",
         cache_control: { type: "ephemeral" },
       },
     ],
@@ -352,7 +407,7 @@ export async function askAnalyst(input: {
       ...(input.history ?? []).map((turn) => ({ role: turn.role, content: turn.content })),
       { role: "user", content: input.question },
     ],
-    tools: [campaignDetail, listCampaignsTool, attributionTool],
+    tools: [campaignDetail, listCampaignsTool, attributionTool, storeSalesTool],
   });
 
   const final = await runner.runUntilDone();
