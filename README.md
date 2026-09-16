@@ -153,6 +153,24 @@ its own marketing, which is the thing this tool exists to stop.
 If you seeded demo data before it was removed from the project, `npm run db:purge-demo` deletes it
 and everything derived from it.
 
+### When Meta Ads syncs but returns nothing
+
+A sync that succeeds with zero rows is the least informative outcome there is:
+the account might be the wrong one, the right one might have been quiet for the
+window, or the insights query might be wrong. All three look identical from the
+outside.
+
+```bash
+npm run doctor:meta
+```
+
+It asks the same question three ways — what every ad account this login can see
+has spent in total, what the selected account contains, and what insights
+returns for the sync's own window — and then says which of the three cases the
+answers describe. `amount_spent` in the account list is the one to read first:
+the account you actually advertise from is the one with a non-zero figure, and
+an account showing zero will never return rows no matter how the window moves.
+
 ### Google Ads has two separate approvals
 
 They are configured in different products, and being granted one tells you
@@ -362,6 +380,7 @@ Demo connections never call out; they update locally and say so.
 | `npm run db:migrate` | Create or update the schema |
 | `npm run db:purge-demo` | Delete demo data left over from an older install |
 | `npm run doctor:google` | Diagnose a Google Ads connection — see below |
+| `npm run doctor:meta` | Diagnose a Meta Ads connection, including a sync that returns no rows |
 | `npm run setup` | Create the database |
 
 Demo data covers the inspiration module too: four fictional competitors whose creatives are built
