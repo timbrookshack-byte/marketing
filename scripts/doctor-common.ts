@@ -182,15 +182,23 @@ export async function prepare(
     throw error;
   }
 
-  console.log(`access token       ${credentials.accessToken ? "present" : "MISSING"}`);
-  console.log(`refresh token      ${credentials.refreshToken ? "present" : "none stored"}`);
-  console.log(
-    `expires            ${
-      credentials.expiresAt
-        ? `${new Date(credentials.expiresAt).toLocaleString()}${isExpired(credentials) ? " (EXPIRED)" : ""}`
-        : "unknown"
-    }`,
-  );
+  const connectorForLabels = getConnector(platform);
+  if (connectorForLabels.authType === "oauth2") {
+    console.log(`access token       ${credentials.accessToken ? "present" : "MISSING"}`);
+    console.log(`refresh token      ${credentials.refreshToken ? "present" : "none stored"}`);
+  } else {
+    const stored = Object.keys(credentials).filter((name) => credentials[name]);
+    console.log(`stored credentials ${stored.length > 0 ? stored.join(", ") : "NONE"}`);
+  }
+  if (credentials.expiresAt || connectorForLabels.authType === "oauth2") {
+    console.log(
+      `expires            ${
+        credentials.expiresAt
+          ? `${new Date(credentials.expiresAt).toLocaleString()}${isExpired(credentials) ? " (EXPIRED)" : ""}`
+          : "unknown"
+      }`,
+    );
+  }
 
   const connector = getConnector(platform);
   if (connector.oauth && isExpired(credentials)) {
@@ -205,7 +213,11 @@ export async function prepare(
     console.log("Renewed and saved.");
   }
 
-  if (!credentials.accessToken) {
+  // Not every platform stores a bearer token. Shopify keeps a client id and
+  // secret and mints a short-lived token per sync, so reporting "no access
+  // token" there describes a working connection as broken.
+  const usesStoredToken = connector.authType === "oauth2";
+  if (usesStoredToken && !credentials.accessToken) {
     console.log("\nNo access token to test with. Reconnect this account on /connections.");
     return null;
   }

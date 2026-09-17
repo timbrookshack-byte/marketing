@@ -11,7 +11,12 @@
  */
 
 import { call, heading, loadEnvFile, prepare } from "./doctor-common";
-import { chooseAttributingVisit, parseLandingPage, readOrderAttributes } from "../src/lib/connectors/sales";
+import {
+  chooseAttributingVisit,
+  parseLandingPage,
+  readOrderAttributes,
+  shopifyAccessToken,
+} from "../src/lib/connectors/sales";
 import type { OrderAttribute } from "../src/lib/connectors/sales";
 
 const env = loadEnvFile();
@@ -24,8 +29,27 @@ async function main(): Promise<void> {
 
   const { connection, credentials } = ready;
   const shop = (connection.externalAccountId ?? "").replace(/^https?:\/\//, "");
-  const token = credentials.accessToken as string;
-  const version = process.env.SHOPIFY_API_VERSION ?? "2025-10";
+  const version = (connection.config.apiVersion as string) ?? "2025-01";
+
+  // Shopify issues a short-lived token per call from the stored client
+  // credentials, so the doctor mints one the same way a sync does.
+  let token: string;
+  try {
+    token = await shopifyAccessToken(
+      {
+        connectionId: connection.id,
+        externalAccountId: connection.externalAccountId,
+        credentials,
+        config: connection.config,
+        refresh: async () => credentials,
+      },
+      shop,
+    );
+    console.log("\nExchanged the stored client credentials for an access token.");
+  } catch (error) {
+    console.log(`\nCould not obtain an access token: ${(error as Error).message}`);
+    return;
+  }
 
   heading(`The last ${SAMPLE} orders`);
 

@@ -200,7 +200,7 @@ export function chooseAttributingVisit(
  */
 const tokenCache = new Map<string, { token: string; expiresAt: number }>();
 
-async function shopifyAccessToken(ctx: ConnectorContext, shop: string): Promise<string> {
+export async function shopifyAccessToken(ctx: ConnectorContext, shop: string): Promise<string> {
   const stored = (ctx.credentials.accessToken as string) ?? "";
 
   // A permanent token from before the change still works as-is.
