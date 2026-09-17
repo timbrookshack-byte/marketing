@@ -189,12 +189,27 @@ export const GAQL = {
   // metrics.video_views is likewise gone. Google Ads video views are not used
   // by any analysis here, so the column is reported as zero rather than held up
   // waiting for its replacement.
+  //
+  // Per-ad metrics, which is what the creative analysis needs. Performance Max
+  // campaigns do not appear here at all: they have asset groups instead of ad
+  // groups, so ad_group_ad returns nothing for them and their spend is simply
+  // absent. See campaignMetrics below.
   metrics: (range: DateRange) => `
     SELECT segments.date, campaign.id, ad_group.id, ad_group_ad.ad.id,
            customer.currency_code,
            metrics.impressions, metrics.clicks, metrics.cost_micros,
            metrics.conversions, metrics.conversions_value
     FROM ad_group_ad
+    WHERE segments.date BETWEEN '${range.start}' AND '${range.end}'
+  `,
+  // Every campaign, including the ones the query above cannot see. Used to fill
+  // the gap rather than to replace it, so ad-level detail survives where it
+  // exists — see fetchMetrics.
+  campaignMetrics: (range: DateRange) => `
+    SELECT segments.date, campaign.id, customer.currency_code,
+           metrics.impressions, metrics.clicks, metrics.cost_micros,
+           metrics.conversions, metrics.conversions_value
+    FROM campaign
     WHERE segments.date BETWEEN '${range.start}' AND '${range.end}'
   `,
 } as const;
@@ -369,7 +384,20 @@ export const googleAdsConnector: AdsConnector = {
       };
     }>(ctx, GAQL.metrics(range));
 
-    return rows.map((row) => ({
+    const toRow = (row: {
+      segments: { date: string };
+      campaign: { id: string };
+      adGroup?: { id: string };
+      adGroupAd?: { ad: { id: string } };
+      customer?: { currencyCode?: string };
+      metrics: {
+        impressions?: string;
+        clicks?: string;
+        costMicros?: string;
+        conversions?: number;
+        conversionsValue?: number;
+      };
+    }): MetricRow => ({
       date: row.segments.date,
       connectionId: ctx.connectionId,
       platform: "google_ads" as const,
@@ -384,7 +412,36 @@ export const googleAdsConnector: AdsConnector = {
       videoViews: 0,
       frequency: 0,
       currency: row.customer?.currencyCode ?? "USD",
-    }));
+    });
+
+    const adLevel = rows.map(toRow);
+
+    /*
+     * Performance Max campaigns run on asset groups, not ad groups, so the
+     * query above returns nothing for them — no error, no empty result worth
+     * noticing, just a campaign that appears to have spent nothing. An account
+     * running mostly Performance Max would show a fraction of its real spend and
+     * every comparison against another channel would be wrong in Google's
+     * favour.
+     *
+     * The campaign-level query sees everything, so it fills the gap. It is used
+     * only for campaigns the ad-level query did not report, so ad-level detail
+     * survives where it exists and nothing is counted twice. A campaign covered
+     * at ad level keeps its per-ad rows; a Performance Max campaign gets one row
+     * per day with no ad attached, which is the finest grain Google offers for
+     * it.
+     */
+    const campaignRows = await gaql<Parameters<typeof toRow>[0]>(
+      ctx,
+      GAQL.campaignMetrics(range),
+    );
+    const coveredCampaigns = new Set(adLevel.map((row) => row.campaignExternalId));
+
+    const fill = campaignRows
+      .filter((row) => !coveredCampaigns.has(row.campaign.id))
+      .map(toRow);
+
+    return [...adLevel, ...fill];
   },
 
   async pauseCampaign(ctx, externalCampaignId) {
