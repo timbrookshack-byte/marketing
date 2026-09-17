@@ -47,6 +47,75 @@ export function parseLandingPage(url: string | null | undefined): Partial<OrderD
   };
 }
 
+/**
+ * Click ids stamped onto the order itself.
+ *
+ * A server-side tagging setup — Stape and server-side GTM being the common one
+ * — captures gclid and fbclid into first-party cookies at the click and carries
+ * them through checkout, writing them onto the order as cart attributes. That
+ * survives everything the landing page URL does not: ad blockers, cookie
+ * expiry, and a buyer who returns days later by another route.
+ *
+ * So when the order carries one it is the best evidence available, better than
+ * anything reconstructed from the journey, and it is preferred over the rest.
+ *
+ * Meta's _fbc cookie is `fb.1.<timestamp>.<fbclid>`, so the click id is pulled
+ * out of it rather than stored whole — the cookie is not what the reporting
+ * matches on.
+ */
+const ATTRIBUTE_CLICK_IDS: [RegExp, string][] = [
+  [/^_?gclid$/i, "google"],
+  [/^_?wbraid$/i, "google"],
+  [/^_?gbraid$/i, "google"],
+  [/^_?fbclid$/i, "meta"],
+  [/^_?fbc$/i, "meta"],
+  [/^_?ttclid$/i, "tiktok"],
+  [/^_?msclkid$/i, "microsoft"],
+  [/^_?li_fat_id$/i, "linkedin"],
+  [/^_?epik$/i, "pinterest"],
+  [/^_?twclid$/i, "x"],
+  [/^_?rdt_cid$/i, "reddit"],
+];
+
+export interface OrderAttribute {
+  key?: string;
+  value?: string;
+}
+
+export function readOrderAttributes(attributes: OrderAttribute[] | undefined): Partial<OrderDraft> {
+  if (!attributes?.length) return {};
+
+  const value = (name: string): string | null => {
+    const found = attributes.find(
+      (attribute) => attribute.key?.replace(/^_+/, "").toLowerCase() === name,
+    );
+    const raw = found?.value?.trim();
+    return raw ? raw : null;
+  };
+
+  const out: Partial<OrderDraft> = {
+    utmSource: value("utm_source"),
+    utmMedium: value("utm_medium"),
+    utmCampaign: value("utm_campaign"),
+    utmContent: value("utm_content"),
+    utmTerm: value("utm_term"),
+  };
+
+  for (const [pattern, type] of ATTRIBUTE_CLICK_IDS) {
+    const match = attributes.find((attribute) => attribute.key && pattern.test(attribute.key.trim()));
+    const raw = match?.value?.trim();
+    if (!raw) continue;
+
+    // fb.1.<timestamp>.<fbclid> — only the last part is the click id.
+    const parts = raw.split(".");
+    out.clickId = /^_?fbc$/i.test(match!.key!.trim()) && parts.length >= 4 ? parts.slice(3).join(".") : raw;
+    out.clickIdType = type;
+    break;
+  }
+
+  return out;
+}
+
 interface CustomerVisit {
   landingPage?: string;
   source?: string;
@@ -311,6 +380,8 @@ export const shopifyConnector: SalesConnector = {
               currentTotalPriceSet { shopMoney { amount currencyCode } }
               customer { id numberOfOrders }
               landingPageUrl
+              customAttributes { key value }
+              note
               customerJourneySummary {
                 lastVisit { ${VISIT_FIELDS} }
                 ${
@@ -386,6 +457,9 @@ export const shopifyConnector: SalesConnector = {
         const attributing = chooseAttributingVisit(journey, node.landingPageUrl as string | undefined);
         const parsed = parseLandingPage(attributing.landingPage);
         const utm = attributing.utmParameters;
+        // Written at the click by server-side tagging and carried through
+        // checkout, so it outranks anything reconstructed from the journey.
+        const stamped = readOrderAttributes(node.customAttributes as OrderAttribute[] | undefined);
         const customer = node.customer as { id?: string; numberOfOrders?: string } | undefined;
 
         orders.push({
@@ -400,13 +474,13 @@ export const shopifyConnector: SalesConnector = {
           isNewCustomer: Number(customer?.numberOfOrders ?? 1) <= 1,
           landingPage: parsed.landingPage ?? null,
           // Shopify's parsed UTM fields win over anything we scrape from the URL.
-          utmSource: utm?.source ?? parsed.utmSource ?? null,
-          utmMedium: utm?.medium ?? parsed.utmMedium ?? null,
-          utmCampaign: utm?.campaign ?? parsed.utmCampaign ?? null,
-          utmContent: utm?.content ?? parsed.utmContent ?? null,
-          utmTerm: utm?.term ?? parsed.utmTerm ?? null,
-          clickId: parsed.clickId ?? null,
-          clickIdType: parsed.clickIdType ?? null,
+          utmSource: stamped.utmSource ?? utm?.source ?? parsed.utmSource ?? null,
+          utmMedium: stamped.utmMedium ?? utm?.medium ?? parsed.utmMedium ?? null,
+          utmCampaign: stamped.utmCampaign ?? utm?.campaign ?? parsed.utmCampaign ?? null,
+          utmContent: stamped.utmContent ?? utm?.content ?? parsed.utmContent ?? null,
+          utmTerm: stamped.utmTerm ?? utm?.term ?? parsed.utmTerm ?? null,
+          clickId: stamped.clickId ?? parsed.clickId ?? null,
+          clickIdType: stamped.clickIdType ?? parsed.clickIdType ?? null,
         });
       }
 
