@@ -113,6 +113,41 @@ async function main(): Promise<void> {
       : `Failed: ${failures.join(", ")}. The message above each one names the cause.`,
   );
 
+  /*
+   * What Google's conversion number is actually made of.
+   *
+   * metrics.conversions counts every action marked Primary, and an account can
+   * have a store visit, a page view or a download sitting in there beside the
+   * purchases. The total then looks like sales and is not, and nothing in the
+   * number itself says so. Segmenting by conversion action is the only way to
+   * see it from here.
+   */
+  if (failures.length === 0) {
+    heading("What counts as a conversion on this account");
+    await call(
+      "by conversion action:",
+      url,
+      {
+        method: "POST",
+        headers: { ...headers, "content-type": "application/json" },
+        body: JSON.stringify({
+          query: `
+            SELECT segments.conversion_action_name, segments.conversion_action_category,
+                   metrics.conversions, metrics.conversions_value
+            FROM campaign
+            WHERE segments.date BETWEEN '${range.start}' AND '${range.end}'
+          `,
+        }),
+      },
+    );
+    console.log(
+      "\nEach row is one conversion action feeding the totals the portal ingests. A row that is\n" +
+        "not a purchase — a store visit, a page view, a download — is counted as a conversion and\n" +
+        "its value added to conversion value, which is how an account comes to report revenue it\n" +
+        "never took. Demote those to Secondary in Google Ads if that is not what you meant.",
+    );
+  }
+
   // Knowing a field is gone does not say what replaced it, and the reference
   // documentation only covers versions Google is still publishing. The API
   // will describe its own schema, which is the one answer that cannot be stale.
