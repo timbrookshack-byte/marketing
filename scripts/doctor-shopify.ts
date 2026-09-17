@@ -110,7 +110,9 @@ async function main(): Promise<void> {
   let stampedCount = 0;
   let journeyCount = 0;
   let neitherCount = 0;
+  let landingPagesWithQuery = 0;
   const attributeKeys = new Set<string>();
+  const taggedSources = new Map<string, number>();
 
   for (const { node } of orders) {
     const attributes = node.customAttributes as OrderAttribute[] | undefined;
@@ -131,6 +133,10 @@ async function main(): Promise<void> {
 
     if (stamped.clickId) stampedCount += 1;
     if (fromVisit.clickId) journeyCount += 1;
+    if ((visit.landingPage ?? "").includes("?")) landingPagesWithQuery += 1;
+
+    const source = stamped.utmSource ?? visit.utmParameters?.source ?? fromVisit.utmSource;
+    if (source) taggedSources.set(source, (taggedSources.get(source) ?? 0) + 1);
     if (!stamped.clickId && !fromVisit.clickId && !stamped.utmCampaign && !visitCampaign) neitherCount += 1;
 
     console.log(
@@ -144,7 +150,34 @@ async function main(): Promise<void> {
   console.log(`Click id stamped on the order : ${stampedCount}/${orders.length}`);
   console.log(`Click id found in the journey : ${journeyCount}/${orders.length}`);
   console.log(`No ad evidence at all         : ${neitherCount}/${orders.length}`);
+  console.log(
+    `Tagged sources seen           : ${
+      [...taggedSources].map(([name, n]) => `${name} (${n})`).join(", ") || "(none)"
+    }`,
+  );
   console.log("");
+
+  // Shopify records the landing page with its query string removed and exposes
+  // the utm parameters separately. A click id lives only in that query string
+  // and has no field of its own, so where the pages come back bare there is no
+  // route to one through the journey at all — whatever the ad platform appended.
+  if (landingPagesWithQuery === 0 && orders.length > 0) {
+    console.log(
+      "None of these landing pages kept a query string, so Shopify is storing them stripped and\n" +
+        "parsing the utm parameters out separately. A click id has no field of its own there, so\n" +
+        "it cannot be recovered from the journey however the ads are tagged. That leaves two\n" +
+        "routes: utm parameters on the ad links, or a click id written onto the order itself.\n",
+    );
+  }
+
+  if (taggedSources.size > 0) {
+    console.log(
+      `Only ${[...taggedSources.keys()].join(" and ")} appear in the tagging above. A platform ` +
+        "missing from that list is not being tagged at all, and its sales will be indistinguishable\n" +
+        "from direct traffic no matter what it reports on its own dashboard. Auto-tagging does not\n" +
+        "help here: it appends a click id to the query string, which is the part Shopify drops.\n",
+    );
+  }
 
   if (stampedCount === 0 && attributeKeys.size === 0) {
     console.log(
