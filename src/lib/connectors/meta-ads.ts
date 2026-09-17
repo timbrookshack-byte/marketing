@@ -15,34 +15,55 @@ import { stableId } from "../util";
 const API_VERSION = process.env.META_ADS_API_VERSION ?? "v21.0";
 const API_BASE = `https://graph.facebook.com/${API_VERSION}`;
 
-const PURCHASE_ACTIONS = new Set([
-  "purchase",
+/**
+ * Meta reports one sale under several action types at once.
+ *
+ * A single website purchase comes back as `offsite_conversion.fb_pixel_purchase`
+ * (the pixel event), `purchase`, and `omni_purchase` (the roll-up across web,
+ * app and offline) — three descriptions of the same event, not three events.
+ * Adding them up triples every figure, and the inflated number is plausible
+ * enough to be believed: it makes Meta look like it is over-claiming against the
+ * store by far more than it is, which is exactly the judgement this portal
+ * exists to get right.
+ *
+ * So one type is chosen, most complete first, and the rest ignored.
+ */
+const PURCHASE_ACTIONS = [
   "omni_purchase",
+  "purchase",
   "offsite_conversion.fb_pixel_purchase",
-]);
-const LEAD_ACTIONS = new Set(["lead", "offsite_conversion.fb_pixel_lead", "onsite_conversion.lead_grouped"]);
+] as const;
+
+const LEAD_ACTIONS = [
+  "lead",
+  "offsite_conversion.fb_pixel_lead",
+  "onsite_conversion.lead_grouped",
+] as const;
 
 interface ActionEntry {
   action_type: string;
   value: string;
 }
 
+/** The first action type present, summed across its own entries only. */
+function firstPresent(entries: ActionEntry[] | undefined, order: readonly string[]): number {
+  if (!entries?.length) return 0;
+  for (const type of order) {
+    const matching = entries.filter((entry) => entry.action_type === type);
+    if (matching.length > 0) {
+      return matching.reduce((total, entry) => total + Number(entry.value ?? 0), 0);
+    }
+  }
+  return 0;
+}
+
 function pickConversions(actions: ActionEntry[] | undefined): number {
-  if (!actions) return 0;
-  const purchases = actions
-    .filter((a) => PURCHASE_ACTIONS.has(a.action_type))
-    .reduce((total, a) => total + Number(a.value ?? 0), 0);
-  if (purchases > 0) return purchases;
-  return actions
-    .filter((a) => LEAD_ACTIONS.has(a.action_type))
-    .reduce((total, a) => total + Number(a.value ?? 0), 0);
+  const purchases = firstPresent(actions, PURCHASE_ACTIONS);
+  return purchases > 0 ? purchases : firstPresent(actions, LEAD_ACTIONS);
 }
 
 function pickRevenue(actionValues: ActionEntry[] | undefined): number {
-  if (!actionValues) return 0;
-  return actionValues
-    .filter((a) => PURCHASE_ACTIONS.has(a.action_type))
-    .reduce((total, a) => total + Number(a.value ?? 0), 0);
+  return firstPresent(actionValues, PURCHASE_ACTIONS);
 }
 
 const STATUS_MAP: Record<string, "active" | "paused" | "ended"> = {
