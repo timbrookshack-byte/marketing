@@ -14,12 +14,12 @@ import { call, heading, loadEnvFile, prepare } from "./doctor-common";
 import { chooseAttributingVisit, parseLandingPage, readOrderAttributes } from "../src/lib/connectors/sales";
 import type { OrderAttribute } from "../src/lib/connectors/sales";
 
-loadEnvFile();
+const env = loadEnvFile();
 
 const SAMPLE = 15;
 
 async function main(): Promise<void> {
-  const ready = await prepare("shopify");
+  const ready = await prepare("shopify", env);
   if (!ready) return;
 
   const { connection, credentials } = ready;

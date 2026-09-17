@@ -18,13 +18,13 @@ import { call, heading, loadEnvFile, prepare } from "./doctor-common";
 import { GAQL } from "../src/lib/connectors/google-ads";
 import { trailingWindow } from "../src/lib/util";
 
-loadEnvFile();
+const env = loadEnvFile();
 
 const HOST = "https://googleads.googleapis.com";
 const VERSIONS = ["v26", "v25", "v24", "v23", "v22"];
 
 async function main(): Promise<void> {
-  const ready = await prepare("google_ads");
+  const ready = await prepare("google_ads", env);
   if (!ready) return;
 
   const { connection, credentials } = ready;

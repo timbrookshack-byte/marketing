@@ -13,13 +13,13 @@
 import { call, countOf, heading, loadEnvFile, prepare } from "./doctor-common";
 import { trailingWindow } from "../src/lib/util";
 
-loadEnvFile();
+const env = loadEnvFile();
 
 const HOST = "https://graph.facebook.com";
 const CANDIDATE_VERSIONS = ["v23.0", "v22.0", "v21.0", "v20.0"];
 
 async function main(): Promise<void> {
-  const ready = await prepare("meta_ads");
+  const ready = await prepare("meta_ads", env);
   if (!ready) return;
 
   const { connection, credentials } = ready;

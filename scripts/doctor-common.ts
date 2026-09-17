@@ -17,21 +17,52 @@ import type { Connection, Credentials, PlatformId } from "../src/lib/types";
 /**
  * Next.js reads .env for us; a plain tsx script does not, and without
  * CREDENTIALS_KEY the stored credentials cannot be decrypted.
+ *
+ * This has to accept everything Next.js accepts, or a script reports a problem
+ * the app does not have: a byte order mark from an editor, CRLF line endings, a
+ * leading `export`, quoted values, and lower-case names.
  */
-export function loadEnvFile(): void {
+export function loadEnvFile(): { found: boolean; keys: string[] } {
   let contents: string;
   try {
     contents = readFileSync(".env", "utf8");
   } catch {
-    return;
+    return { found: false, keys: [] };
   }
-  for (const line of contents.split("\n")) {
-    const match = /^\s*([A-Z0-9_]+)\s*=\s*(.*)$/.exec(line);
+
+  const keys: string[] = [];
+  for (const line of contents.replace(/^\uFEFF/, "").split(/\r?\n/)) {
+    if (/^\s*[#;]/.test(line)) continue;
+    const match = /^\s*(?:export\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*)$/.exec(line);
     if (!match) continue;
     const [, key, rawValue] = match;
+    keys.push(key);
     if (process.env[key] !== undefined) continue;
-    process.env[key] = rawValue.trim().replace(/^["']|["']$/g, "");
+    process.env[key] = rawValue.trim().replace(/^(["'])(.*)\1$/, "$2");
   }
+  return { found: true, keys };
+}
+
+/**
+ * What the environment looks like from here.
+ *
+ * Reported rather than assumed: a script that cannot decrypt credentials the
+ * app reads perfectly well is usually a .env line neither of them agrees about,
+ * and there is no way to tell that apart from a genuinely changed key without
+ * saying which names were actually parsed.
+ */
+export function reportEnv(env: { found: boolean; keys: string[] }): void {
+  const key = process.env.CREDENTIALS_KEY?.trim();
+  console.log(`.env file          ${env.found ? "found" : "NOT FOUND in this directory"}`);
+  console.log(
+    `CREDENTIALS_KEY    ${
+      key
+        ? `set, ${key.length} characters`
+        : env.found && env.keys.length > 0
+          ? `not among the ${env.keys.length} names read from .env (${env.keys.join(", ")})`
+          : "not set"
+    }`,
+  );
 }
 
 export function heading(text: string): void {
@@ -88,7 +119,10 @@ export interface Ready {
  * bailing out when it cannot — an expired token or an unreadable one makes
  * every call below it fail for a reason that has nothing to do with the query.
  */
-export async function prepare(platform: PlatformId): Promise<Ready | null> {
+export async function prepare(
+  platform: PlatformId,
+  env?: { found: boolean; keys: string[] },
+): Promise<Ready | null> {
   heading("Connection");
 
   const connection = findConnectionByPlatform(platform);
@@ -104,14 +138,22 @@ export async function prepare(platform: PlatformId): Promise<Ready | null> {
 
   heading("Credentials");
 
+  if (env) reportEnv(env);
+
   let credentials: Credentials;
   try {
     credentials = loadCredentials(connection.id) ?? {};
   } catch (error) {
     if (error instanceof CredentialsUnreadableError) {
       console.log(
-        "Stored credentials could not be decrypted. CREDENTIALS_KEY has changed since they " +
-          "were saved — reconnect this account to store them under the current key.",
+        "Stored credentials could not be decrypted, so they were saved under a different key " +
+          "than the one in force here.\n\n" +
+          "If the line above says CREDENTIALS_KEY is set, and the app itself works, then this " +
+          "script and the app are reading .env differently — send the two lines above and it can " +
+          "be fixed.\n\n" +
+          "If it says not set, .env is missing the key the account was connected under. Restore " +
+          "that line if you kept a copy; otherwise reconnect the account to store its token under " +
+          "the current key.",
       );
       return null;
     }
