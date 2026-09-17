@@ -67,6 +67,11 @@ const ATTRIBUTE_CLICK_IDS: [RegExp, string][] = [
   [/^_?gclid$/i, "google"],
   [/^_?wbraid$/i, "google"],
   [/^_?gbraid$/i, "google"],
+  // Google's own cookies, which a tagging setup is far likelier to have to hand
+  // than the raw click id: GCL.<timestamp>.<gclid>, same shape as Meta's _fbc.
+  [/^_?gcl_aw$/i, "google"],
+  [/^_?gcl_dc$/i, "google"],
+  [/^_?gcl_gb$/i, "google"],
   [/^_?fbclid$/i, "meta"],
   [/^_?fbc$/i, "meta"],
   [/^_?ttclid$/i, "tiktok"],
@@ -106,9 +111,12 @@ export function readOrderAttributes(attributes: OrderAttribute[] | undefined): P
     const raw = match?.value?.trim();
     if (!raw) continue;
 
-    // fb.1.<timestamp>.<fbclid> — only the last part is the click id.
+    // Cookie values wrap the click id: fb.1.<ts>.<fbclid> and GCL.<ts>.<gclid>.
+    // Only the id itself is what reporting matches on.
+    const key = match!.key!.trim();
     const parts = raw.split(".");
-    out.clickId = /^_?fbc$/i.test(match!.key!.trim()) && parts.length >= 4 ? parts.slice(3).join(".") : raw;
+    const isWrappedCookie = /^_?(fbc|gcl_aw|gcl_dc|gcl_gb)$/i.test(key);
+    out.clickId = isWrappedCookie && parts.length >= 3 ? parts.slice(-1)[0] : raw;
     out.clickIdType = type;
     break;
   }
