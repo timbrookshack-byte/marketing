@@ -5,7 +5,7 @@ import { CreativeWorkshopSchema, PortfolioAnalysisSchema } from "./schemas";
 import type { CreativeWorkshop, PortfolioAnalysis } from "./schemas";
 import { buildSnapshot, summariseForModel, type ModelSummary, type PortfolioSnapshot } from "../analytics";
 import { platformLabel } from "../connectors/registry";
-import { queryOrders } from "../repo";
+import { listConnections, queryOrders } from "../repo";
 import type { PlatformId, Recommendation } from "../types";
 
 /**
@@ -364,6 +364,60 @@ export async function askAnalyst(input: {
     },
   });
 
+  const compareSourcesTool = betaZodTool({
+    name: "compare_revenue_sources",
+    description:
+      "Store revenue against analytics revenue for the same period, per channel. Use when asked " +
+      "whether the numbers can be trusted, or why two sources disagree. Returns nothing useful " +
+      "unless both a store and an analytics property are connected.",
+    inputSchema: z.object({
+      start: z.string().describe("First day, YYYY-MM-DD."),
+      end: z.string().describe("Last day, YYYY-MM-DD."),
+    }),
+    run: ({ start, end }) => {
+      const connected = listConnections();
+      const hasStore = connected.some((c) => c.kind === "sales");
+      const hasAnalytics = connected.some((c) => c.kind === "analytics");
+      if (!hasStore || !hasAnalytics) {
+        return JSON.stringify({
+          comparable: false,
+          reason: `Connected: ${connected.map((c) => `${c.displayName} (${c.kind})`).join(", ") || "nothing"}. ` +
+            "Both a store and an analytics property are needed to compare them.",
+        });
+      }
+
+      const byChannel = (rows: ReturnType<typeof queryOrders>) => {
+        const out: Record<string, { revenue: number; orders: number }> = {};
+        for (const order of rows) {
+          const channel = order.utmSource ?? "direct / untagged";
+          const bucket = (out[channel] ??= { revenue: 0, orders: 0 });
+          bucket.revenue += order.revenue;
+          bucket.orders += 1;
+        }
+        for (const key of Object.keys(out)) out[key].revenue = Math.round(out[key].revenue);
+        return out;
+      };
+
+      const store = queryOrders({ start, end }, "sales");
+      const analytics = queryOrders({ start, end }, "analytics");
+
+      return JSON.stringify(
+        {
+          comparable: true,
+          store: { total: Math.round(store.reduce((t, o) => t + o.revenue, 0)), orders: store.length, byChannel: byChannel(store) },
+          analytics: { total: Math.round(analytics.reduce((t, o) => t + o.revenue, 0)), byChannel: byChannel(analytics) },
+          note:
+            "Totals are never added together — they describe the same sales. The store is the " +
+            "record of what was sold; analytics is a second opinion on where it came from. A " +
+            "channel the store files as untagged and analytics names is a tracking gap, not new " +
+            "revenue. Analytics below the store overall usually means consent or ad blocking.",
+        },
+        null,
+        2,
+      );
+    },
+  });
+
   const attributionTool = betaZodTool({
     name: "get_attribution_breakdown",
     description:
@@ -407,7 +461,7 @@ export async function askAnalyst(input: {
       ...(input.history ?? []).map((turn) => ({ role: turn.role, content: turn.content })),
       { role: "user", content: input.question },
     ],
-    tools: [campaignDetail, listCampaignsTool, attributionTool, storeSalesTool],
+    tools: [campaignDetail, listCampaignsTool, attributionTool, storeSalesTool, compareSourcesTool],
   });
 
   const final = await runner.runUntilDone();

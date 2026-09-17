@@ -506,10 +506,39 @@ export function upsertOrders(orders: Omit<SalesOrder, "id">[]): number {
   return orders.length;
 }
 
-export function queryOrders(range: DateRange): SalesOrder[] {
+/**
+ * Which connections revenue is counted from.
+ *
+ * A store API and an analytics property describe the same sales, so adding them
+ * together double counts every order — and the total stays plausible while
+ * being twice what the business took, which is the worst way for a number to be
+ * wrong. A store is the better record when there is one: it knows individual
+ * orders, their real value, and what was refunded. Analytics is the fallback
+ * for a shop with no store API, and otherwise a second opinion rather than an
+ * addition.
+ */
+export function revenueSourceKind(): ConnectorKind {
+  const hasStore = getDb()
+    .prepare("SELECT 1 FROM connections WHERE kind = 'sales' LIMIT 1")
+    .pluck()
+    .get();
+  return hasStore ? "sales" : "analytics";
+}
+
+/**
+ * Orders from the authoritative revenue source only. Pass a kind to read a
+ * different one deliberately — comparing the two is the point of connecting
+ * both, and that comparison has to ask for each side by name.
+ */
+export function queryOrders(range: DateRange, kind: ConnectorKind = revenueSourceKind()): SalesOrder[] {
   const rows = getDb()
-    .prepare("SELECT * FROM sales_orders WHERE date(ordered_at) BETWEEN ? AND ? ORDER BY ordered_at")
-    .all(range.start, range.end) as Row[];
+    .prepare(
+      `SELECT o.* FROM sales_orders o
+         JOIN connections c ON c.id = o.connection_id
+        WHERE c.kind = ? AND date(o.ordered_at) BETWEEN ? AND ?
+        ORDER BY o.ordered_at`,
+    )
+    .all(kind, range.start, range.end) as Row[];
   return rows.map((row) => ({
     id: row.id as string,
     connectionId: row.connection_id as string,
