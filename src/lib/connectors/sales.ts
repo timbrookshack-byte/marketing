@@ -47,6 +47,71 @@ export function parseLandingPage(url: string | null | undefined): Partial<OrderD
   };
 }
 
+interface CustomerVisit {
+  landingPage?: string;
+  source?: string;
+  sourceType?: string;
+  occurredAt?: string;
+  utmParameters?: {
+    source?: string;
+    medium?: string;
+    campaign?: string;
+    content?: string;
+    term?: string;
+  };
+}
+
+export interface CustomerJourney {
+  firstVisit?: CustomerVisit;
+  lastVisit?: CustomerVisit;
+  moments?: CustomerVisit[];
+}
+
+/**
+ * Which visit in a customer's journey should be credited with the sale.
+ *
+ * Reading only the last visit loses nearly every ad-driven sale that took more
+ * than one session to close. Someone clicks a Google ad, browses, comes back
+ * days later by typing the shop's name, and buys — the last visit carries no
+ * click id, so a perfectly tracked sale is recorded as untraceable. The longer
+ * the consideration, the more of them are lost, which means this fails worst on
+ * exactly the expensive purchases that matter most.
+ *
+ * So the whole journey is searched for a visit carrying an ad click id, most
+ * recent first, since that is the strongest evidence available and it does not
+ * stop being true because the buyer returned by another route. Failing that, a
+ * visit with campaign tagging. Failing that, the last visit as before.
+ *
+ * This still credits one visit rather than sharing between them. Splitting a
+ * sale across touches needs a model of how much each contributed, and inventing
+ * one here would produce numbers nobody could check against the platforms.
+ */
+export function chooseAttributingVisit(
+  journey: CustomerJourney | undefined,
+  fallbackLandingPage: string | undefined,
+): CustomerVisit {
+  const visits = [
+    ...(journey?.moments ?? []),
+    ...(journey?.lastVisit ? [journey.lastVisit] : []),
+    ...(journey?.firstVisit ? [journey.firstVisit] : []),
+  ].filter((visit) => visit.landingPage || visit.utmParameters);
+
+  // Most recent first; visits with no timestamp sort last rather than winning.
+  const ordered = [...visits].sort((a, b) =>
+    (b.occurredAt ?? "").localeCompare(a.occurredAt ?? ""),
+  );
+
+  const withClickId = ordered.find((visit) => parseLandingPage(visit.landingPage).clickId);
+  if (withClickId) return withClickId;
+
+  const withCampaign = ordered.find(
+    (visit) => visit.utmParameters?.campaign || parseLandingPage(visit.landingPage).utmCampaign,
+  );
+  if (withCampaign) return withCampaign;
+
+  return journey?.lastVisit ?? journey?.firstVisit ?? { landingPage: fallbackLandingPage };
+}
+
 // --------------------------------------------------------------------- Shopify
 
 /**
@@ -224,7 +289,17 @@ export const shopifyConnector: SalesConnector = {
     const version = (ctx.config.apiVersion as string) ?? "2025-01";
     const endpoint = `https://${shop}/admin/api/${version}/graphql.json`;
 
-    const query = `
+    /*
+     * The full journey is not on every Shopify plan, and GraphQL validates the
+     * whole document — an unavailable field fails the entire query rather than
+     * returning null for that part. So the richer selection is tried first and
+     * the narrower one is the fallback: a shop that can see its journey gets
+     * proper attribution, and one that cannot still syncs.
+     */
+    const VISIT_FIELDS =
+      "landingPage source sourceType occurredAt utmParameters { source medium campaign content term }";
+
+    const buildQuery = (withJourney: boolean) => `
       query Orders($cursor: String, $filter: String!) {
         orders(first: 100, after: $cursor, query: $filter) {
           pageInfo { hasNextPage endCursor }
@@ -237,12 +312,21 @@ export const shopifyConnector: SalesConnector = {
               customer { id numberOfOrders }
               landingPageUrl
               customerJourneySummary {
-                lastVisit { landingPage source sourceType utmParameters { source medium campaign content term } }
+                lastVisit { ${VISIT_FIELDS} }
+                ${
+                  withJourney
+                    ? `firstVisit { ${VISIT_FIELDS} }
+                       moments(first: 25) { ... on CustomerVisit { ${VISIT_FIELDS} } }`
+                    : ""
+                }
               }
             }
           }
         }
       }`;
+
+    let query = buildQuery(true);
+    let journeyAvailable = true;
 
     const orders: OrderDraft[] = [];
     let cursor: string | null = null;
@@ -270,12 +354,25 @@ export const shopifyConnector: SalesConnector = {
       });
 
       if (response.errors?.length) {
+        const detail = response.errors.map((e) => e.message).join(" | ");
+
+        // Retry once without the journey fields when they are what it objected
+        // to. Losing multi-visit attribution is worth it to keep the orders.
+        if (journeyAvailable && /moments|firstVisit|CustomerVisit|occurredAt/i.test(detail)) {
+          console.warn(
+            `Shopify does not expose the full customer journey on this plan, so orders will be ` +
+              `attributed to their last visit only, and ad clicks followed by a later direct ` +
+              `visit will look untracked. Shopify said: ${detail}`,
+          );
+          journeyAvailable = false;
+          query = buildQuery(false);
+          continue;
+        }
+
         // GraphQL validates the whole document and returns every problem at
         // once. Surfacing only the first turns one schema drift into several
         // round trips.
-        throw new Error(
-          `Shopify GraphQL error: ${response.errors.map((e) => e.message).join(" | ")}`,
-        );
+        throw new Error(`Shopify GraphQL error: ${detail}`);
       }
 
       const page = response.data?.orders;
@@ -285,23 +382,10 @@ export const shopifyConnector: SalesConnector = {
         const node = edge.node as Record<string, unknown>;
         const money = (node.currentTotalPriceSet as { shopMoney?: { amount?: string; currencyCode?: string } })
           ?.shopMoney;
-        const journey = node.customerJourneySummary as
-          | {
-              lastVisit?: {
-                landingPage?: string;
-                utmParameters?: {
-                  source?: string;
-                  medium?: string;
-                  campaign?: string;
-                  content?: string;
-                  term?: string;
-                };
-              };
-            }
-          | undefined;
-        const landing = journey?.lastVisit?.landingPage ?? (node.landingPageUrl as string | undefined);
-        const parsed = parseLandingPage(landing);
-        const utm = journey?.lastVisit?.utmParameters;
+        const journey = node.customerJourneySummary as CustomerJourney | undefined;
+        const attributing = chooseAttributingVisit(journey, node.landingPageUrl as string | undefined);
+        const parsed = parseLandingPage(attributing.landingPage);
+        const utm = attributing.utmParameters;
         const customer = node.customer as { id?: string; numberOfOrders?: string } | undefined;
 
         orders.push({
