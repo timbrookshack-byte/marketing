@@ -141,7 +141,7 @@ export interface AttributedOrder {
 }
 
 /** utm_source values in the wild, mapped to the platform that owns them. */
-const SOURCE_ALIASES: Record<string, PlatformId> = {
+export const SOURCE_ALIASES: Record<string, PlatformId> = {
   google: "google_ads",
   adwords: "google_ads",
   googleads: "google_ads",

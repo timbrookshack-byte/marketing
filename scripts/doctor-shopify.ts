@@ -11,6 +11,8 @@
  */
 
 import { call, heading, loadEnvFile, prepare } from "./doctor-common";
+import { SOURCE_ALIASES } from "../src/lib/analytics/metrics";
+import { platformLabel } from "../src/lib/connectors/registry";
 import {
   chooseAttributingVisit,
   parseLandingPage,
@@ -150,12 +152,46 @@ async function main(): Promise<void> {
   console.log(`Click id stamped on the order : ${stampedCount}/${orders.length}`);
   console.log(`Click id found in the journey : ${journeyCount}/${orders.length}`);
   console.log(`No ad evidence at all         : ${neitherCount}/${orders.length}`);
-  console.log(
-    `Tagged sources seen           : ${
-      [...taggedSources].map(([name, n]) => `${name} (${n})`).join(", ") || "(none)"
-    }`,
-  );
   console.log("");
+
+  // A source only counts as attributable if it maps to a platform the portal
+  // knows. Listing the raw strings hides both failures this catches: a platform
+  // tagged under two spellings, and a tag that is not an ad platform at all.
+  const byPlatform = new Map<string, { spellings: string[]; orders: number }>();
+  const unrecognised: string[] = [];
+
+  for (const [name, count] of taggedSources) {
+    const platform = SOURCE_ALIASES[name.trim().toLowerCase()];
+    if (!platform) {
+      unrecognised.push(`${name} (${count})`);
+      continue;
+    }
+    const entry = byPlatform.get(platform) ?? { spellings: [], orders: 0 };
+    entry.spellings.push(`${name} (${count})`);
+    entry.orders += count;
+    byPlatform.set(platform, entry);
+  }
+
+  console.log("Tagged sources, by the platform they resolve to:");
+  for (const [platform, entry] of byPlatform) {
+    console.log(`  ${platformLabel(platform).padEnd(16)} ${entry.orders} order(s) — ${entry.spellings.join(", ")}`);
+  }
+  if (unrecognised.length > 0) {
+    console.log(`  not an ad platform  ${unrecognised.join(", ")}`);
+  }
+  if (byPlatform.size === 0 && unrecognised.length === 0) console.log("  (none)");
+  console.log("");
+
+  const inconsistent = [...byPlatform].filter(([, entry]) => entry.spellings.length > 1);
+  if (inconsistent.length > 0) {
+    console.log(
+      `Tagged under more than one name: ${inconsistent
+        .map(([platform, entry]) => `${platformLabel(platform)} as ${entry.spellings.join(" and ")}`)
+        .join("; ")}.\n` +
+        "Both resolve here, so nothing is lost, but it means the ads were tagged by hand at\n" +
+        "different times and any ad tagged with a third spelling would not resolve at all.\n",
+    );
+  }
 
   // Shopify records the landing page with its query string removed and exposes
   // the utm parameters separately. A click id lives only in that query string
@@ -181,9 +217,11 @@ async function main(): Promise<void> {
 
   if (stampedCount === 0 && attributeKeys.size === 0) {
     console.log(
-      "Nothing is being written onto the order. If a server-side tagging setup is in place, it is\n" +
-        "not passing the click id through to the cart — that is one setting in the tagging setup,\n" +
-        "and it is the single highest-value change available here.",
+      `Nothing is written onto the order, so tagging is carrying all of the attribution — and it\n` +
+        `covered ${orders.length - neitherCount} of these ${orders.length} orders. Two ways forward, and they are worth different\n` +
+        "amounts: tag every ad consistently, which is free and fixes the platforms already partly\n" +
+        "covered; or have the tagging setup write the click id onto the order, which survives\n" +
+        "untagged links and redirects but is a change to how tracking works.",
     );
   } else if (stampedCount === 0) {
     console.log(
