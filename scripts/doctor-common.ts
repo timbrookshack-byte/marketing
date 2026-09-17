@@ -22,25 +22,39 @@ import type { Connection, Credentials, PlatformId } from "../src/lib/types";
  * the app does not have: a byte order mark from an editor, CRLF line endings, a
  * leading `export`, quoted values, and lower-case names.
  */
-export function loadEnvFile(): { found: boolean; keys: string[] } {
+export function loadEnvFile(): { found: boolean; keys: string[]; duplicated: string[] } {
   let contents: string;
   try {
     contents = readFileSync(".env", "utf8");
   } catch {
-    return { found: false, keys: [] };
+    return { found: false, keys: [], duplicated: [] };
   }
 
+  // Last occurrence wins, which is what dotenv and therefore Next.js do: the
+  // file is parsed into an object, so a later line overwrites an earlier one.
+  // Taking the first instead is a real difference — a key left blank by the
+  // template and set properly further down reads as blank here and correct in
+  // the app, and nothing in either output says why they disagree.
+  const parsed = new Map<string, string>();
   const keys: string[] = [];
+  const duplicated = new Set<string>();
+
   for (const line of contents.replace(/^\uFEFF/, "").split(/\r?\n/)) {
     if (/^\s*[#;]/.test(line)) continue;
     const match = /^\s*(?:export\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*)$/.exec(line);
     if (!match) continue;
     const [, key, rawValue] = match;
+    if (parsed.has(key)) duplicated.add(key);
     keys.push(key);
-    if (process.env[key] !== undefined) continue;
-    process.env[key] = rawValue.trim().replace(/^(["'])(.*)\1$/, "$2");
+    parsed.set(key, rawValue.trim().replace(/^(["'])(.*)\1$/, "$2"));
   }
-  return { found: true, keys };
+
+  // A real environment variable still outranks the file, as dotenv has it.
+  for (const [key, value] of parsed) {
+    if (process.env[key] === undefined) process.env[key] = value;
+  }
+
+  return { found: true, keys, duplicated: [...duplicated] };
 }
 
 /**
@@ -51,18 +65,26 @@ export function loadEnvFile(): { found: boolean; keys: string[] } {
  * and there is no way to tell that apart from a genuinely changed key without
  * saying which names were actually parsed.
  */
-export function reportEnv(env: { found: boolean; keys: string[] }): void {
+export function reportEnv(env: { found: boolean; keys: string[]; duplicated: string[] }): void {
   const key = process.env.CREDENTIALS_KEY?.trim();
   console.log(`.env file          ${env.found ? "found" : "NOT FOUND in this directory"}`);
   console.log(
     `CREDENTIALS_KEY    ${
       key
         ? `set, ${key.length} characters`
-        : env.found && env.keys.length > 0
-          ? `not among the ${env.keys.length} names read from .env (${env.keys.join(", ")})`
-          : "not set"
+        : env.found && env.keys.includes("CREDENTIALS_KEY")
+          ? "present in .env but empty"
+          : env.found
+            ? `not among the ${env.keys.length} names in .env`
+            : "not set"
     }`,
   );
+  if (env.duplicated.length > 0) {
+    console.log(
+      `duplicated in .env ${env.duplicated.join(", ")} — the last line wins, and an earlier ` +
+        "blank one is easy to mistake for the setting that applies. Worth deleting the spares.",
+    );
+  }
 }
 
 export function heading(text: string): void {
@@ -121,7 +143,7 @@ export interface Ready {
  */
 export async function prepare(
   platform: PlatformId,
-  env?: { found: boolean; keys: string[] },
+  env?: { found: boolean; keys: string[]; duplicated: string[] },
 ): Promise<Ready | null> {
   heading("Connection");
 
