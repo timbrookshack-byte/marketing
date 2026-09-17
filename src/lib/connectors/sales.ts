@@ -133,7 +133,15 @@ interface CustomerVisit {
 export interface CustomerJourney {
   firstVisit?: CustomerVisit;
   lastVisit?: CustomerVisit;
-  moments?: CustomerVisit[];
+  /** A connection, though a plain array is accepted so callers can pass either. */
+  moments?: { edges?: { node?: CustomerVisit }[] } | CustomerVisit[];
+}
+
+function momentsOf(journey: CustomerJourney | undefined): CustomerVisit[] {
+  const moments = journey?.moments;
+  if (!moments) return [];
+  if (Array.isArray(moments)) return moments;
+  return (moments.edges ?? []).flatMap((edge) => (edge.node ? [edge.node] : []));
 }
 
 /**
@@ -160,7 +168,7 @@ export function chooseAttributingVisit(
   fallbackLandingPage: string | undefined,
 ): CustomerVisit {
   const visits = [
-    ...(journey?.moments ?? []),
+    ...momentsOf(journey),
     ...(journey?.lastVisit ? [journey.lastVisit] : []),
     ...(journey?.firstVisit ? [journey.firstVisit] : []),
   ].filter((visit) => visit.landingPage || visit.utmParameters);
@@ -387,7 +395,9 @@ export const shopifyConnector: SalesConnector = {
                 ${
                   withJourney
                     ? `firstVisit { ${VISIT_FIELDS} }
-                       moments(first: 25) { ... on CustomerVisit { ${VISIT_FIELDS} } }`
+                       moments(first: 25) {
+                         edges { node { ... on CustomerVisit { ${VISIT_FIELDS} } } }
+                       }`
                     : ""
                 }
               }
@@ -431,9 +441,10 @@ export const shopifyConnector: SalesConnector = {
         // to. Losing multi-visit attribution is worth it to keep the orders.
         if (journeyAvailable && /moments|firstVisit|CustomerVisit|occurredAt/i.test(detail)) {
           console.warn(
-            `Shopify does not expose the full customer journey on this plan, so orders will be ` +
-              `attributed to their last visit only, and ad clicks followed by a later direct ` +
-              `visit will look untracked. Shopify said: ${detail}`,
+            "Falling back to last-visit attribution: the full customer journey could not be " +
+              "read, so an ad click followed by a later direct visit will look untracked. This " +
+              "is usually the plan not exposing it, but a query Shopify rejects as malformed " +
+              `looks identical from here, so the reason it gave is worth reading: ${detail}`,
           );
           journeyAvailable = false;
           query = buildQuery(false);

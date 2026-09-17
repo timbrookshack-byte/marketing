@@ -67,7 +67,9 @@ async function main(): Promise<void> {
             customerJourneySummary {
               lastVisit { ${visitFields} }
               firstVisit { ${visitFields} }
-              moments(first: 25) { ... on CustomerVisit { ${visitFields} } }
+              moments(first: 25) {
+                edges { node { ... on CustomerVisit { ${visitFields} } } }
+              }
             }
           }
         }
@@ -89,8 +91,10 @@ async function main(): Promise<void> {
 
   if (parsed.errors?.length) {
     console.log(
-      "\nShopify rejected the query. If it names moments or firstVisit, this plan does not expose " +
-        "the full customer journey and orders can only be attributed to their last visit.",
+      "\nShopify rejected the query, and the message above says why. A complaint about the shape " +
+        "of the query is a bug here; a refusal about access or availability means the plan does " +
+        "not expose the full customer journey, and orders can then only be attributed to their " +
+        "last visit.",
     );
     return;
   }
