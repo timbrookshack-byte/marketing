@@ -5,3 +5,5 @@
 *.png binary
 *.jpg binary
 *.ico binary
+# Windows refuses to run a batch file with Unix line endings.
+*.cmd text eol=crlf

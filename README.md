@@ -127,6 +127,23 @@ npm run dev        # http://localhost:3000
 There is no demo or sample data. Every number in the portal comes from an account you have
 connected, so nothing on screen is ever a simulation you might mistake for real spend.
 
+### Opening it day to day
+
+Double-click **start-portal.cmd** in the project folder. It installs and builds
+only when those are actually missing, starts the server, waits for the port to
+answer and then opens the browser — opening it any sooner shows a connection
+error and looks like a failure.
+
+Leave that window open while using the portal; closing it stops the server.
+
+To have it running whenever the machine is on, press `Win`+`R`, enter
+`shell:startup`, and put a shortcut to `start-portal.cmd` in the folder that
+opens. Right-click the shortcut, set **Run** to **Minimized**, and it starts
+quietly at login.
+
+**update-portal.cmd** pulls the latest version and rebuilds. It is only needed
+when there is an update; the portal does not need it to run.
+
 ### On Windows
 
 Two things bite here, neither obvious from the error message they produce.
