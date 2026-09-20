@@ -136,10 +136,10 @@ error and looks like a failure.
 
 Leave that window open while using the portal; closing it stops the server.
 
-To have it running whenever the machine is on, press `Win`+`R`, enter
-`shell:startup`, and put a shortcut to `start-portal.cmd` in the folder that
-opens. Right-click the shortcut, set **Run** to **Minimized**, and it starts
-quietly at login.
+To have it running whenever the machine is on, double-click
+**install-startup.cmd**. It creates a minimised Startup shortcut pointing at
+wherever the project actually lives, so there is no path to type.
+`install-startup.cmd remove` undoes it.
 
 **update-portal.cmd** pulls the latest version and rebuilds. It is only needed
 when there is an update; the portal does not need it to run.
