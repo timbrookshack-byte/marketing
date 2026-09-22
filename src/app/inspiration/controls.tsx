@@ -86,14 +86,35 @@ export function CompetitorManager({
       } else {
         const ok = results.filter((r) => r.status === "success");
         const found = ok.reduce((total, r) => total + r.found, 0);
-        const problems = results.filter((r) => r.status !== "success");
-        // Skips and errors are reported, not swallowed: an empty grid should
-        // never be ambiguous between "no ads" and "source not configured".
+
+        // Every brand is searched with every source, so one unconfigured source
+        // produces one identical complaint per brand. Repeating it four or ten
+        // times buries the other sources' problems in its own noise, so each
+        // distinct problem is stated once with a count of what it affected.
+        const problems = new Map<string, { detail: string; brands: number }>();
+        for (const result of results) {
+          if (result.status === "success") continue;
+          const detail = result.detail ?? result.status;
+          const entry = problems.get(`${result.source}|${detail}`) ?? { detail, brands: 0 };
+          entry.brands += 1;
+          problems.set(`${result.source}|${detail}`, entry);
+        }
+
+        const sourcesTried = new Set(results.map((r) => r.source)).size;
+        const summary =
+          ok.length > 0
+            ? `${found} creative${found === 1 ? "" : "s"} from ${ok.length} source${ok.length === 1 ? "" : "s"}.`
+            : `Nothing found. None of the ${sourcesTried} source${sourcesTried === 1 ? "" : "s"} returned ads.`;
+
         setMessage(
-          `${found} creatives from ${ok.length} source${ok.length === 1 ? "" : "s"}.` +
-            (problems.length
-              ? ` ${problems.map((p) => `${p.source}: ${p.detail ?? p.status}`).join(" · ")}`
-              : ""),
+          [
+            summary,
+            ...[...problems.entries()].map(([key, entry]) => {
+              const source = key.split("|")[0];
+              const scope = entry.brands > 1 ? ` (all ${entry.brands} brands)` : "";
+              return `${source}${scope}: ${entry.detail}`;
+            }),
+          ].join("\n"),
         );
       }
       router.refresh();
@@ -156,7 +177,7 @@ export function CompetitorManager({
       {/* Beside the button that produced it: the foot of the page is past the
           brand list and the grid, where an answer goes unread. */}
       {message ? (
-        <p className="mb-4 rounded-lg border p-3 text-[12px] leading-relaxed text-[var(--text-secondary)] hairline">
+        <p className="mb-4 whitespace-pre-line rounded-lg border p-3 text-[12px] leading-relaxed text-[var(--text-secondary)] hairline">
           {message}
         </p>
       ) : null}
