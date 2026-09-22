@@ -134,16 +134,32 @@ export function CompetitorManager({
             equity you do not have, which makes their creative a poor model.
           </p>
         </div>
-        <button
-          type="button"
-          onClick={() => refresh()}
-          disabled={pending || competitors.length === 0}
-          className="rounded-lg px-3 py-1.5 text-[13px] font-medium text-white transition-opacity hover:opacity-90 disabled:opacity-60"
-          style={{ background: "var(--series-1)" }}
-        >
-          {pending ? "Pulling…" : "Pull latest ads"}
-        </button>
+        <div className="flex flex-col items-end gap-1">
+          <button
+            type="button"
+            onClick={() => refresh()}
+            disabled={pending || competitors.length === 0}
+            className="rounded-lg px-3 py-1.5 text-[13px] font-medium text-white transition-opacity hover:opacity-90 disabled:opacity-60"
+            style={{ background: "var(--series-1)" }}
+          >
+            {pending ? "Pulling…" : "Pull latest ads"}
+          </button>
+          {/* A disabled button that says nothing reads as a broken one. */}
+          {competitors.length === 0 ? (
+            <span className="text-[11px] text-[var(--text-muted)]">
+              Add a brand below first — there is nothing to search for yet.
+            </span>
+          ) : null}
+        </div>
       </header>
+
+      {/* Beside the button that produced it: the foot of the page is past the
+          brand list and the grid, where an answer goes unread. */}
+      {message ? (
+        <p className="mb-4 rounded-lg border p-3 text-[12px] leading-relaxed text-[var(--text-secondary)] hairline">
+          {message}
+        </p>
+      ) : null}
 
       {competitors.length > 0 ? (
         <ul className="mb-5 flex flex-col divide-y hairline">
@@ -310,9 +326,7 @@ export function CompetitorManager({
         ) : null}
       </div>
 
-      {message ? (
-        <p className="mt-4 text-[12px] text-[var(--text-secondary)]">{message}</p>
-      ) : null}
+
     </section>
   );
 }

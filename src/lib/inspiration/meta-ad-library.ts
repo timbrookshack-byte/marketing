@@ -1,3 +1,4 @@
+import { findConnectionByPlatform, loadCredentials } from "../repo";
 import { request } from "../connectors/http";
 import { InspirationSourceError, type ExternalCreative, type InspirationSource } from "./types";
 
@@ -56,17 +57,38 @@ interface ArchiveAd {
   target_locations?: { name?: string }[];
 }
 
+/**
+ * The Ad Library takes a Meta user access token, and a connected Meta Ads
+ * account already has one.
+ *
+ * Demanding a separate META_AD_LIBRARY_TOKEN made this look unconfigured to
+ * someone who had authorised Meta minutes earlier, and the fix on offer was to
+ * go and create a second token by hand. The connection's token is tried when no
+ * environment variable is set; the variable still wins, since a token from an
+ * identity-confirmed app reaches more of the archive than an ordinary one.
+ */
 function token(): string {
-  const value = process.env.META_AD_LIBRARY_TOKEN ?? process.env.META_ADS_ACCESS_TOKEN;
-  if (!value) {
-    throw new InspirationSourceError(
-      "meta_ad_library",
-      "Set META_AD_LIBRARY_TOKEN to search the Meta Ad Library. It needs a user access token " +
-        "from an app whose owner has completed Meta's identity confirmation.",
-      true,
-    );
+  const fromEnv = process.env.META_AD_LIBRARY_TOKEN ?? process.env.META_ADS_ACCESS_TOKEN;
+  if (fromEnv) return fromEnv;
+
+  const connection = findConnectionByPlatform("meta_ads");
+  if (connection) {
+    try {
+      const stored = loadCredentials(connection.id);
+      if (stored?.accessToken) return stored.accessToken as string;
+    } catch {
+      // Unreadable credentials are the connection's problem to report, not this
+      // source's — fall through to the setup message below.
+    }
   }
-  return value;
+
+  throw new InspirationSourceError(
+    "meta_ad_library",
+    "No Meta access token available. Connect Meta Ads on the connections page and this will " +
+      "use that token, or set META_AD_LIBRARY_TOKEN to use one from an identity-confirmed app, " +
+      "which reaches more of the archive.",
+    true,
+  );
 }
 
 export const metaAdLibrarySource: InspirationSource = {
@@ -74,7 +96,8 @@ export const metaAdLibrarySource: InspirationSource = {
   displayName: "Meta Ad Library",
   summary: "Every ad a brand runs on Facebook and Instagram, with delivery dates.",
   docsUrl: "https://www.facebook.com/ads/library/api/",
-  requiredEnv: ["META_AD_LIBRARY_TOKEN"],
+  // Nothing is strictly required: a connected Meta Ads account supplies a token.
+  requiredEnv: [],
   capabilities: {
     creativeText: true,
     media: false, // The snapshot URL is a rendered page, not a downloadable asset.
