@@ -67,6 +67,14 @@ export function explainAiError(error: unknown): string {
       "ANTHROPIC_WORKSPACE_ID to .env with the workspace's id."
     );
   }
+  if (message.includes("invalid x-api-key") || message.includes("authentication_error")) {
+    return (
+      "Anthropic rejected this API key. Either it is mistyped, it has been revoked, or — the " +
+      "one that is easy to miss — ANTHROPIC_API_KEY appears more than once in .env, where the " +
+      "last line wins and a blank or placeholder one below a real key silently replaces it. " +
+      "Run `npm run doctor:ai` to see which."
+    );
+  }
   if (message.includes("credit balance") || message.includes("insufficient")) {
     return (
       "The Anthropic account has no credit. Add credit at console.anthropic.com/settings/billing — " +

@@ -399,6 +399,7 @@ Demo connections never call out; they update locally and say so.
 | `npm run doctor:google` | Diagnose a Google Ads connection — see below |
 | `npm run doctor:meta` | Diagnose a Meta Ads connection, including a sync that returns no rows |
 | `npm run doctor:shopify` | Show what evidence of an ad click recent orders actually carry |
+| `npm run doctor:ai` | Check the Anthropic key, and why the API is refusing it |
 | `npm run setup` | Create the database |
 
 Demo data covers the inspiration module too: four fictional competitors whose creatives are built
