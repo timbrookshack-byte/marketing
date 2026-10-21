@@ -17,13 +17,28 @@ import { MODEL, explainAiError } from "../src/lib/ai/client";
 
 const env = loadEnvFile();
 
-/** Enough to recognise a key without revealing one. */
+/**
+ * Enough to recognise a key without revealing one.
+ *
+ * The variety matters as much as the shape. An Admin key is a valid Anthropic
+ * key that the Messages API refuses outright — it administers the organisation
+ * and cannot call models — and it is easy to copy by mistake, because it sits
+ * on a neighbouring console page and looks like every other key.
+ */
 function describeKey(value: string | undefined): string {
   if (!value) return "not set";
   const trimmed = value.trim();
-  if (trimmed !== value) return `set, but with surrounding whitespace (${trimmed.length} characters)`;
-  const shape = /^sk-ant-/.test(trimmed) ? "starts with sk-ant-" : "does NOT start with sk-ant-";
-  return `set, ${trimmed.length} characters, ${shape}`;
+  const padding = trimmed !== value ? ", with surrounding whitespace to remove" : "";
+
+  const variety = /^sk-ant-admin/.test(trimmed)
+    ? "an ADMIN key — these manage the organisation and cannot call models"
+    : /^sk-ant-api/.test(trimmed)
+      ? "a standard API key"
+      : /^sk-ant-/.test(trimmed)
+        ? "an unrecognised sk-ant- variety"
+        : "NOT an Anthropic key — it does not begin with sk-ant-";
+
+  return `set, ${trimmed.length} characters, ${variety}${padding}`;
 }
 
 async function main(): Promise<void> {
@@ -74,7 +89,36 @@ async function main(): Promise<void> {
             "the list is paginated.",
     );
   } catch (error) {
-    console.log(`Failed: ${explainAiError(error)}`);
+    const message = error instanceof Error ? error.message : String(error);
+    console.log(`Failed: ${message.split("\n")[0]}`);
+
+    if (/invalid x-api-key|authentication_error/.test(message)) {
+      const key = process.env.ANTHROPIC_API_KEY?.trim() ?? "";
+      console.log(
+        "\nThe key is well formed and appears once in .env, so the value reaching the API is the\n" +
+          "one you meant. That leaves what the key itself is:",
+      );
+      if (/^sk-ant-admin/.test(key)) {
+        console.log(
+          "\n  This is an Admin key. It administers the organisation and cannot call models, so\n" +
+            "  the API refuses it however valid it is. Create a key under API keys instead, inside\n" +
+            "  a workspace, at console.anthropic.com/settings/keys.",
+        );
+      } else {
+        console.log(
+          "\n  - It has been revoked or deleted. Check it is still listed at\n" +
+            "    console.anthropic.com/settings/keys, and that you are looking at the right\n" +
+            "    organisation if you belong to more than one.\n" +
+            "  - It was copied with a character missing or added. The console only shows a key\n" +
+            "    once, so a partial copy is easy and looks entirely normal.\n\n" +
+            "  Either way the fix is a new key, created inside a workspace rather than at\n" +
+            "  organisation level — that also avoids the workspace header this portal would\n" +
+            "  otherwise need.",
+        );
+      }
+    } else {
+      console.log(`\n${explainAiError(error)}`);
+    }
   }
 
   console.log("\nDone. Paste everything above — the key itself is never printed.");
