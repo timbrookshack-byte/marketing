@@ -140,6 +140,34 @@ export interface AttributedOrder {
   method: AttributionMethod;
 }
 
+/**
+ * Whether a campaign is trying to sell something.
+ *
+ * Every finding here divides revenue by spend, which is the right question for
+ * a sales campaign and a meaningless one for anything else. An account can hold
+ * a reach campaign, a recruitment campaign and a traffic campaign alongside its
+ * sales campaigns; judged on return they all look like money burned, and the
+ * optimiser would move their budget to a campaign selling sofas — which is not
+ * a trade-off the operator ever agreed to, because a hiring campaign was never
+ * competing with a sofa for the same money.
+ *
+ * The test is deliberately one-sided. Only an objective that plainly names
+ * something other than sales is excluded; anything unrecognised counts as
+ * selling, because wrongly exempting a real sales campaign hides a genuine
+ * loss, while wrongly judging a brand campaign merely adds a finding the
+ * operator can dismiss.
+ */
+const NON_SALES_OBJECTIVES =
+  /AWARENESS|REACH|TRAFFIC|LINK_CLICKS|ENGAGEMENT|VIDEO_VIEWS|THRUPLAY|LEAD|APP_|MESSAGES|STORE_VISIT|SUBSCRIBER/i;
+
+export function aimsAtSales(objective: string | null | undefined): boolean {
+  if (!objective) return true;
+  // OUTCOME_SALES and CATALOG_SALES contain no excluded word; LEAD_GENERATION
+  // and OUTCOME_LEADS do. Checked in that order so "SALES" always wins.
+  if (/SALES|PURCHASE|CONVERSION/i.test(objective)) return true;
+  return !NON_SALES_OBJECTIVES.test(objective);
+}
+
 /** utm_source values in the wild, mapped to the platform that owns them. */
 export const SOURCE_ALIASES: Record<string, PlatformId> = {
   google: "google_ads",

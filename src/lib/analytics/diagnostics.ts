@@ -7,7 +7,7 @@ import type {
   ChannelPerformance,
   Derived,
 } from "./metrics";
-import { trend } from "./metrics";
+import { aimsAtSales, trend } from "./metrics";
 
 /**
  * Deterministic findings. Everything here is arithmetic — the same inputs always
@@ -66,6 +66,34 @@ export function runDiagnostics(input: DiagnosticsInput): Finding[] {
   for (const item of campaigns) {
     const { campaign, derived, series } = item;
     if (derived.spend < settings.minSpendForAction) continue;
+
+    // A reach, traffic or recruitment campaign has no revenue to show because
+    // it was never selling. Every test below divides revenue by spend, so
+    // running them here would report a campaign doing its job as a failure.
+    if (!aimsAtSales(campaign.objective)) {
+      findings.push({
+        source: "rules",
+        scope: "campaign",
+        targetId: campaign.id,
+        targetName: campaign.name,
+        platform: campaign.platform,
+        type: "investigate",
+        severity: "good",
+        title: `${campaign.name}: not a sales campaign, so not judged on return`,
+        rationale:
+          `Its objective is ${campaign.objective}. It spent ${Math.round(derived.spend)} over ` +
+          `${windowDays} days and is held out of return, break-even and budget reallocation, all ` +
+          "of which would read it as money lost. Judge it on what it was set up to do. If it was " +
+          "meant to sell, the objective is wrong in the ad platform rather than here.",
+        expectedMonthlyImpact: 0,
+        confidence: 1,
+        evidence: {
+          spend: Math.round(derived.spend),
+          objective: campaign.objective ?? "none",
+        },
+      });
+      continue;
+    }
 
     const monthlySpend = toMonthly(derived.spend, windowDays);
     const aov = derived.aov > 0 ? derived.aov : portfolioAov;

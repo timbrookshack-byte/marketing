@@ -1,5 +1,6 @@
 import { clamp, safeDiv } from "../util";
 import type { AnalysisSettings, CampaignPerformance } from "./metrics";
+import { aimsAtSales } from "./metrics";
 
 /**
  * Budget reallocation.
@@ -105,6 +106,10 @@ export function optimiseBudgets(
     if (dailySpend <= 0) {
       eligible = false;
       reason = "No spend in the window";
+    } else if (!aimsAtSales(item.campaign.objective)) {
+      // Reallocating away from it would fund sofas with the hiring budget.
+      eligible = false;
+      reason = `Not a sales campaign (${item.campaign.objective}) — it is not competing for this money`;
     } else if (item.campaign.status !== "active") {
       eligible = false;
       reason = "Not currently running";
