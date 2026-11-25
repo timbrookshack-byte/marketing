@@ -20,12 +20,13 @@
     "doctor:ai": "tsx scripts/doctor-ai.ts",
     "cf:build": "opennextjs-cloudflare build && tsx scripts/cf-sanitise.ts",
     "cf:preview": "opennextjs-cloudflare preview",
-    "cf:deploy": "opennextjs-cloudflare deploy",
+    "cf:deploy": "npm run cf:build && opennextjs-cloudflare deploy",
     "cf:schema": "tsx scripts/d1-schema.ts",
     "cf:secrets": "tsx scripts/cf-secrets.ts",
     "test:policy": "tsx scripts/test-policy.ts",
     "test:proposals": "tsx scripts/test-proposals.ts",
-    "test:mcp": "tsx scripts/test-mcp.ts"
+    "test:mcp": "tsx scripts/test-mcp.ts",
+    "cf:deploy:only": "opennextjs-cloudflare deploy"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.125.0",
