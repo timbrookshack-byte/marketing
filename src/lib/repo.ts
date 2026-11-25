@@ -42,9 +42,13 @@ function parseJson<T>(value: unknown, fallback: T): T {
  * query per child row would have worked locally and been a round trip each on
  * D1; asking once for the whole set is both correct here and cheaper there.
  *
- * Chunked because SQLite has a bound-variable limit, and a sync of a large
- * account would otherwise exceed it.
+ * Chunked because of the bound-parameter ceiling, and a sync of a large
+ * account would otherwise exceed it. The size is set from D1's limit, which is
+ * 100 per query -- an order of magnitude below SQLite's own, so a chunk sized
+ * for local use fails on D1 with "too many SQL variables".
  */
+const MAX_BOUND_PARAMS = 90;
+
 async function idsPresentIn(
   db: SqlDatabase,
   table: "campaigns" | "ad_groups",
@@ -53,8 +57,8 @@ async function idsPresentIn(
   const unique = [...new Set(ids)];
   const found = new Set<string>();
 
-  for (let i = 0; i < unique.length; i += 400) {
-    const chunk = unique.slice(i, i + 400);
+  for (let i = 0; i < unique.length; i += MAX_BOUND_PARAMS) {
+    const chunk = unique.slice(i, i + MAX_BOUND_PARAMS);
     const placeholders = chunk.map(() => "?").join(", ");
     const rows = (await db
       .prepare(`SELECT id FROM ${table} WHERE id IN (${placeholders})`)
