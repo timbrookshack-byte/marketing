@@ -31,7 +31,7 @@
       "binding": "DB",
       "database_name": "marketing360",
       // Filled in from `wrangler d1 create marketing360`.
-      "database_id": "REPLACE_WITH_DATABASE_ID"
+      "database_id": "8504622f-6f5f-4153-8b32-fa2f1ce0b8b8"
     }
   ]
 }
