@@ -9,11 +9,11 @@ import {
   Money,
   PrimaryLink,
   SeverityBadge,
-  TableWrap,
   Td,
   Th,
 } from "@/components/ui";
 import { CampaignActions } from "./actions";
+import { CampaignTable, type CampaignRow } from "./filters";
 
 export const dynamic = "force-dynamic";
 
@@ -60,8 +60,9 @@ export default async function CampaignsPage() {
         title="Every campaign, ranked by spend"
         subtitle="Proposed daily is what the optimiser would set if you let it rebalance the same total budget."
       >
-        <TableWrap>
-          <table className="w-full min-w-[1000px] border-collapse">
+        <CampaignTable
+          windowDays={windowDays}
+          header={
             <thead>
               <tr className="border-b hairline">
                 <Th>Campaign</Th>
@@ -77,13 +78,13 @@ export default async function CampaignsPage() {
                 <Th align="right">Act</Th>
               </tr>
             </thead>
-            <tbody>
-              {campaigns.map((item) => {
+          }
+          rows={campaigns.map((item): CampaignRow => {
                 const flag = severityByCampaign.get(item.campaign.id);
                 const line = planByCampaign.get(item.campaign.id);
                 const dailyNow = safeDiv(item.totals.spend, windowDays);
 
-                return (
+                const node = (
                   <tr key={item.campaign.id} className="border-b align-top hairline last:border-0">
                     <Td>
                       <div className="flex flex-col gap-1">
@@ -187,10 +188,18 @@ export default async function CampaignsPage() {
                     </Td>
                   </tr>
                 );
+
+                return {
+                  id: item.campaign.id,
+                  name: item.campaign.name,
+                  platform: item.campaign.platform,
+                  platformLabel: platformLabel(item.campaign.platform),
+                  status: item.campaign.status,
+                  spend: item.totals.spend,
+                  node,
+                };
               })}
-            </tbody>
-          </table>
-        </TableWrap>
+        />
       </Card>
 
       <Card title="How the proposed budgets were worked out">
