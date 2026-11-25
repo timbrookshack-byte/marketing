@@ -337,6 +337,15 @@ export const metaAdsConnector: AdsConnector = {
     return { ok: true, detail: `Campaign ${externalCampaignId} paused in Meta Ads` };
   },
 
+  async resumeCampaign(ctx, externalCampaignId) {
+    await request(`${API_BASE}/${externalCampaignId}`, {
+      method: "POST",
+      headers: bearer(ctx.credentials.accessToken),
+      form: { status: "ACTIVE" },
+    });
+    return { ok: true, detail: `Campaign ${externalCampaignId} resumed in Meta Ads` };
+  },
+
   async setCampaignBudget(ctx, externalCampaignId, dailyBudget) {
     await request(`${API_BASE}/${externalCampaignId}`, {
       method: "POST",

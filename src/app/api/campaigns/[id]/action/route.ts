@@ -1,118 +1,67 @@
 import { NextResponse } from "next/server";
-import { getAdsConnector } from "@/lib/connectors/registry";
-import { getOAuthClient, isExpired, refreshAccessToken } from "@/lib/connectors/oauth";
-import {
-  getCampaign,
-  getConnection,
-  loadCredentials,
-  logAction,
-  saveCredentials,
-  setCampaignBudget,
-  setCampaignStatus,
-} from "@/lib/repo";
-import type { ConnectorContext } from "@/lib/connectors/types";
+
+import { approve, propose } from "@/lib/control/proposals";
+import type { ChangeAction } from "@/lib/control/policy";
 
 export const dynamic = "force-dynamic";
 
 /**
- * Write-back to a live ad account.
+ * Write-back to a live ad account, from the portal.
  *
- * Three outcomes, and the response always says which happened:
- *   applied  — the change went through on the platform
- *   recorded — the connector cannot write yet, so the intent is logged here
- *   failed   — the platform rejected it, with its reason
-
+ * This used to talk to the connector directly and apply whatever it was given.
+ * It now goes through the same proposal path as everything else: the change is
+ * recorded, judged against the policy, and applied — the difference from an
+ * assistant's proposal being that a person clicking this button is already the
+ * approval, so it is approved in the same request.
+ *
+ * Routing it this way rather than keeping a shortcut means the caps apply to
+ * an operator too, and the audit trail has one shape regardless of who asked.
+ * A cap that only binds the assistant is not a cap on the account.
  */
 export async function POST(request: Request, context: { params: Promise<{ id: string }> }) {
   const { id } = await context.params;
   const body = (await request.json()) as { action?: string; dailyBudget?: number };
 
-  const campaign = await getCampaign(id);
-  if (!campaign) return NextResponse.json({ error: "Campaign not found" }, { status: 404 });
-
-  const connection = await getConnection(campaign.connectionId);
-  if (!connection) return NextResponse.json({ error: "Connection not found" }, { status: 404 });
-
   const action = body.action;
-  if (action !== "pause" && action !== "set_budget") {
-    return NextResponse.json({ error: "action must be 'pause' or 'set_budget'" }, { status: 400 });
+  if (action !== "pause" && action !== "resume" && action !== "set_budget") {
+    return NextResponse.json(
+      { error: "action must be 'pause', 'resume' or 'set_budget'" },
+      { status: 400 },
+    );
   }
   if (action === "set_budget" && !(Number(body.dailyBudget) > 0)) {
     return NextResponse.json({ error: "dailyBudget must be a positive number" }, { status: 400 });
   }
 
-  const applyLocally = async () => {
-    if (action === "pause") await setCampaignStatus(campaign.id, "paused");
-    else await setCampaignBudget(campaign.id, Number(body.dailyBudget));
-  };
+  const proposed = await propose({
+    campaignId: id,
+    action: action as ChangeAction,
+    dailyBudget: action === "set_budget" ? Number(body.dailyBudget) : undefined,
+    createdBy: "portal",
+  });
 
-  try {
-    const connector = getAdsConnector(campaign.platform);
-    const writer = action === "pause" ? connector.pauseCampaign : connector.setCampaignBudget;
-
-    if (!writer) {
-      await logAction({
-        connectionId: connection.id,
-        scope: "campaign",
-        targetId: campaign.id,
-        action,
-        payload: { dailyBudget: body.dailyBudget },
-        result: "recorded",
-        detail: `${connector.displayName} write-back is not implemented`,
-      });
-      return NextResponse.json({
-        ok: true,
-        detail: `${connector.displayName} cannot be changed from here yet — the action is logged, apply it in the platform.`,
-      });
-    }
-
-    let credentials = await loadCredentials(connection.id) ?? {};
-    const refresh = async () => {
-      const client = getOAuthClient(connection.platform);
-      if (!connector.oauth || !client) throw new Error("OAuth client is not configured");
-      credentials = await refreshAccessToken(connector.oauth, client, credentials);
-      await saveCredentials(connection.id, credentials);
-      return credentials;
-    };
-    if (connector.oauth && credentials.refreshToken && isExpired(credentials)) await refresh();
-
-    const ctx: ConnectorContext = {
-      connectionId: connection.id,
-      externalAccountId: connection.externalAccountId,
-      credentials,
-      config: { ...connection.config, currency: connection.currency },
-      refresh,
-    };
-
-    const result =
-      action === "pause"
-        ? await connector.pauseCampaign!(ctx, campaign.externalId)
-        : await connector.setCampaignBudget!(ctx, campaign.externalId, Number(body.dailyBudget));
-
-    if (result.ok) applyLocally();
-
-    await logAction({
-      connectionId: connection.id,
-      scope: "campaign",
-      targetId: campaign.id,
-      action,
-      payload: { dailyBudget: body.dailyBudget },
-      result: result.ok ? "applied" : "failed",
-      detail: result.detail,
-    });
-
-    return NextResponse.json({ ok: result.ok, detail: result.detail });
-  } catch (error) {
-    const detail = (error as Error).message;
-    await logAction({
-      connectionId: connection.id,
-      scope: "campaign",
-      targetId: campaign.id,
-      action,
-      payload: { dailyBudget: body.dailyBudget },
-      result: "failed",
-      detail,
-    });
-    return NextResponse.json({ error: detail }, { status: 502 });
+  if (!proposed.proposal) {
+    // 422 rather than 400: the request was well formed, the policy refused it.
+    return NextResponse.json(
+      { error: proposed.detail ?? "That change is not allowed", findings: proposed.findings },
+      { status: 422 },
+    );
   }
+
+  const result = await approve(proposed.proposal.id, "portal");
+
+  if (!result.ok) {
+    const status = result.proposal?.result === "recorded" ? 200 : 502;
+    return NextResponse.json(
+      { ok: false, detail: result.detail, proposalId: proposed.proposal.id },
+      { status },
+    );
+  }
+
+  return NextResponse.json({
+    ok: true,
+    detail: result.detail,
+    proposalId: proposed.proposal.id,
+    warnings: proposed.findings.filter((f) => f.severity === "warn").map((f) => f.message),
+  });
 }

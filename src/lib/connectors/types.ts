@@ -132,6 +132,12 @@ export interface AdsConnector extends BaseConnector {
    * recommendation; the rest record the intent in the action log instead.
    */
   pauseCampaign?: (ctx: ConnectorContext, externalCampaignId: string) => Promise<WriteResult>;
+  /**
+   * The other half of pause. A control layer that can stop a campaign but not
+   * start it again leaves the operator reaching for the platform to undo what
+   * the portal did.
+   */
+  resumeCampaign?: (ctx: ConnectorContext, externalCampaignId: string) => Promise<WriteResult>;
   setCampaignBudget?: (
     ctx: ConnectorContext,
     externalCampaignId: string,

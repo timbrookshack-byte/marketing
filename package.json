@@ -23,7 +23,8 @@
     "cf:deploy": "opennextjs-cloudflare deploy",
     "cf:schema": "tsx scripts/d1-schema.ts",
     "cf:secrets": "tsx scripts/cf-secrets.ts",
-    "test:policy": "tsx scripts/test-policy.ts"
+    "test:policy": "tsx scripts/test-policy.ts",
+    "test:proposals": "tsx scripts/test-proposals.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.125.0",

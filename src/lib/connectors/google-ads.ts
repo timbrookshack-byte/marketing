@@ -463,6 +463,25 @@ export const googleAdsConnector: AdsConnector = {
     return { ok: true, detail: `Campaign ${externalCampaignId} paused in Google Ads` };
   },
 
+  async resumeCampaign(ctx, externalCampaignId) {
+    await request(`${await apiBase(ctx)}/customers/${customerId(ctx)}/campaigns:mutate`, {
+      method: "POST",
+      headers: headers(ctx),
+      body: {
+        operations: [
+          {
+            update: {
+              resourceName: `customers/${customerId(ctx)}/campaigns/${externalCampaignId}`,
+              status: "ENABLED",
+            },
+            updateMask: "status",
+          },
+        ],
+      },
+    });
+    return { ok: true, detail: `Campaign ${externalCampaignId} resumed in Google Ads` };
+  },
+
   async setCampaignBudget(ctx, externalCampaignId, dailyBudget) {
     // The budget lives on the shared campaign_budget resource, so look it up first.
     const rows = await gaql<{ campaignBudget: { resourceName: string } }>(ctx, `

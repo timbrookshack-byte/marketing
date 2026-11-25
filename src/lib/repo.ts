@@ -748,13 +748,17 @@ export async function logAction(entry: {
   payload?: Record<string, unknown>;
   result: "applied" | "recorded" | "failed";
   detail?: string;
+  /** Who asked for this: an operator, or the client that proposed it. */
+  actor?: string | null;
+  /** The proposal this came from, when it came from one. */
+  proposalId?: string | null;
 }): Promise<void> {
   await getDatabase()
     .prepare(
-      `INSERT INTO action_log (id, created_at, connection_id, scope, target_id, action, payload, result, detail)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO action_log (id, created_at, connection_id, scope, target_id, action, payload, result, detail, actor, proposal_id)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     )
-    .run([newId("act"), nowISO(), entry.connectionId ?? null, entry.scope, entry.targetId, entry.action, JSON.stringify(entry.payload ?? {}), entry.result, entry.detail ?? null]);
+    .run([newId("act"), nowISO(), entry.connectionId ?? null, entry.scope, entry.targetId, entry.action, JSON.stringify(entry.payload ?? {}), entry.result, entry.detail ?? null, entry.actor ?? null, entry.proposalId ?? null]);
 }
 
 export async function listActions(limit = 50) {
