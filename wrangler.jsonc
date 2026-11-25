@@ -21,9 +21,25 @@
     "enabled": true
   },
 
+  // Both are enabled by default, and wrangler warns when they are left
+  // implicit. Stated here so a deployment cannot quietly change what is
+  // reachable.
+  //
+  // Preview URLs are off deliberately: they give every deployed version its
+  // own hostname, each serving this same Worker and the same D1 data. Access
+  // policies are bound to a hostname, so leaving them on would put unguarded
+  // doors beside the protected one.
+  "workers_dev": true,
+  "preview_urls": false,
+
   "vars": {
     // Read by instrumentation to decide which database driver to install.
-    "RUNTIME": "cloudflare"
+    "RUNTIME": "cloudflare",
+
+    // Where OAuth redirects come back to. Not a secret, so it lives here
+    // rather than in a secret. Without it the code falls back to
+    // http://localhost:3000 and every platform callback breaks.
+    "APP_BASE_URL": "https://marketing360.timbrookshack.workers.dev"
   },
 
   "d1_databases": [
