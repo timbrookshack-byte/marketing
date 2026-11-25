@@ -42,7 +42,7 @@ export async function GET(request: Request, context: { params: Promise<{ platfor
   if (!code || !state) return back("Callback was missing its code or state", false);
 
   // Single-use and server-side: a state we did not issue never gets this far.
-  const stored = consumeOAuthState(state);
+  const stored = await consumeOAuthState(state);
   if (!stored || stored.platform !== platform) {
     return back("This authorisation link has expired or did not come from here. Start again.", false);
   }
@@ -68,7 +68,7 @@ export async function GET(request: Request, context: { params: Promise<{ platfor
 
     // The connection has to exist before we can ask the platform which accounts
     // this token can see, because listAccounts needs a context to run in.
-    const connection = upsertConnection({
+    const connection = await upsertConnection({
       platform: connector.platform,
       kind: connector.kind,
       displayName: connector.displayName,
@@ -76,7 +76,7 @@ export async function GET(request: Request, context: { params: Promise<{ platfor
       currency: "USD",
       config: {},
     });
-    saveCredentials(connection.id, credentials);
+    await saveCredentials(connection.id, credentials);
 
     if (connector.listAccounts) {
       const ctx: ConnectorContext = {
@@ -89,13 +89,13 @@ export async function GET(request: Request, context: { params: Promise<{ platfor
       const accounts = await connector.listAccounts(ctx);
       const chosen = accounts[0];
       if (!chosen) {
-        setConnectionStatus(connection.id, "error", "This login can see no ad accounts.");
+        await setConnectionStatus(connection.id, "error", "This login can see no ad accounts.");
         return back("Connected, but that login can see no ad accounts.", false);
       }
 
       // First account by default. Multi-account pickers are the next step here;
       // until then the choice is explicit in the connection's display name.
-      upsertConnection({
+      await upsertConnection({
         id: connection.id,
         platform: connector.platform,
         kind: connector.kind,
@@ -107,7 +107,7 @@ export async function GET(request: Request, context: { params: Promise<{ platfor
       });
     }
 
-    markSynced(connection.id);
+    await markSynced(connection.id);
 
     const result = await syncConnection(connection.id, trailingWindow(90));
     if (result.status === "error") {

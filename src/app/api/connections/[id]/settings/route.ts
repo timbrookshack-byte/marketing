@@ -14,7 +14,7 @@ export const dynamic = "force-dynamic";
  */
 export async function PATCH(request: Request, context: { params: Promise<{ id: string }> }) {
   const { id } = await context.params;
-  const connection = getConnection(id);
+  const connection = await getConnection(id);
   if (!connection) return NextResponse.json({ error: "Connection not found" }, { status: 404 });
 
   const body = (await request.json()) as {
@@ -34,10 +34,10 @@ export async function PATCH(request: Request, context: { params: Promise<{ id: s
   // advertiser's spend, so it goes before the switch is recorded.
   const switchedAccount =
     connection.externalAccountId !== null && connection.externalAccountId !== accountId;
-  const cleared = switchedAccount ? clearConnectionData(connection.id) : null;
+  const cleared = switchedAccount ? await clearConnectionData(connection.id) : null;
 
   const baseName = connection.displayName.split(" — ")[0];
-  upsertConnection({
+  await upsertConnection({
     id: connection.id,
     platform: connection.platform,
     kind: connection.kind,

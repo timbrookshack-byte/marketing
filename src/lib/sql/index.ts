@@ -11,17 +11,30 @@
 
 import type { SqlDatabase } from "./driver";
 
-let installed: SqlDatabase | null = null;
+/**
+ * Held on globalThis rather than in a module variable.
+ *
+ * The bundler splits the server build into chunks and a module imported from
+ * several of them can end up instantiated more than once. A module-level
+ * variable then exists once per copy: the startup hook installs the driver into
+ * one of them and every page reads a different one, which presents as the
+ * database never having been installed at all. A single global key is shared by
+ * every copy, whatever the bundler does.
+ */
+const KEY = "__marketing360_database__";
+
+type Holder = typeof globalThis & { [KEY]?: SqlDatabase };
 
 export function setDatabase(db: SqlDatabase): void {
-  installed = db;
+  (globalThis as Holder)[KEY] = db;
 }
 
 export function hasDatabase(): boolean {
-  return installed !== null;
+  return (globalThis as Holder)[KEY] !== undefined;
 }
 
 export function getDatabase(): SqlDatabase {
+  const installed = (globalThis as Holder)[KEY];
   if (!installed) {
     throw new Error(
       "No database has been installed. A Node process installs the local SQLite file by " +

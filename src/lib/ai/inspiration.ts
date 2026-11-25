@@ -107,14 +107,14 @@ export async function analyseAngles(options?: { market?: string; days?: number }
   assertAiConfigured();
   const client = getClient();
 
-  const inspiration = buildInspirationSnapshot();
+  const inspiration = await buildInspirationSnapshot();
   if (inspiration.isEmpty) {
     throw new Error(
       "No competitor creatives stored yet. Add a competitor and refresh a source, or enter an ad by hand.",
     );
   }
 
-  const performance = buildSnapshot(options?.days ?? 30);
+  const performance = await buildSnapshot(options?.days ?? 30);
 
   // Competitor side: one entry per concept, with the traction evidence attached
   // so the model reasons from it rather than around it.

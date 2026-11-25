@@ -1,4 +1,4 @@
-import { getJsonSetting } from "../db";
+import { getJsonSetting } from "../sql/settings";
 import { listAds, listCampaigns, metricsDateBounds, queryMetrics, queryOrders } from "../repo";
 import { trailingWindow } from "../util";
 import type { DateRange } from "../types";
@@ -24,8 +24,9 @@ export * from "./optimizer";
 
 export const SETTINGS_KEY = "analysis_settings";
 
-export function loadSettings(): AnalysisSettings {
-  return { ...DEFAULT_SETTINGS, ...getJsonSetting<Partial<AnalysisSettings>>(SETTINGS_KEY, {}) };
+export async function loadSettings(): Promise<AnalysisSettings> {
+  const stored = await getJsonSetting<Partial<AnalysisSettings>>(SETTINGS_KEY, {});
+  return { ...DEFAULT_SETTINGS, ...stored };
 }
 
 export interface PortfolioSnapshot {
@@ -48,9 +49,12 @@ export interface PortfolioSnapshot {
  * falls back to whatever data actually exists so a freshly seeded or partially
  * synced portal still shows something real.
  */
-export function resolveRange(days = 30, explicit?: Partial<DateRange>): DateRange {
+export async function resolveRange(
+  days = 30,
+  explicit?: Partial<DateRange>,
+): Promise<DateRange> {
   if (explicit?.start && explicit?.end) return { start: explicit.start, end: explicit.end };
-  const bounds = metricsDateBounds();
+  const bounds = await metricsDateBounds();
   const window = trailingWindow(days);
   if (!bounds.max) return window;
   const end = bounds.max < window.end ? bounds.max : window.end;
@@ -59,14 +63,24 @@ export function resolveRange(days = 30, explicit?: Partial<DateRange>): DateRang
   return start <= end ? { start, end } : { start: bounds.min ?? window.start, end: bounds.max };
 }
 
-export function buildSnapshot(days = 30, explicitRange?: Partial<DateRange>): PortfolioSnapshot {
-  const range = resolveRange(days, explicitRange);
-  const settings = loadSettings();
+export async function buildSnapshot(
+  days = 30,
+  explicitRange?: Partial<DateRange>,
+): Promise<PortfolioSnapshot> {
+  const [range, settings] = await Promise.all([
+    resolveRange(days, explicitRange),
+    loadSettings(),
+  ]);
 
-  const metrics = queryMetrics(range);
-  const campaigns = listCampaigns();
-  const ads = listAds();
-  const orders = queryOrders(range);
+  // Independent reads, so they go together rather than one round trip after
+  // another — which costs nothing locally and matters on D1, where each is a
+  // network call.
+  const [metrics, campaigns, ads, orders] = await Promise.all([
+    queryMetrics(range),
+    listCampaigns(),
+    listAds(),
+    queryOrders(range),
+  ]);
 
   const performance = buildPerformance({ metrics, campaigns, ads, orders, settings });
 

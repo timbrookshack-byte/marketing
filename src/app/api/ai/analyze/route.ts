@@ -10,7 +10,7 @@ export const maxDuration = 300;
 export async function POST(request: Request) {
   try {
     const body = await request.json().catch(() => ({}) as { days?: number; context?: string });
-    const snapshot = buildSnapshot(Number(body.days) || 30);
+    const snapshot = await buildSnapshot(Number(body.days) || 30);
 
     if (snapshot.isEmpty) {
       return NextResponse.json({ error: "There is no data to analyse yet." }, { status: 400 });
@@ -20,8 +20,8 @@ export async function POST(request: Request) {
 
     // A fresh pass replaces the previous open AI findings rather than stacking
     // a second copy of the same advice on top of them.
-    clearRecommendations("ai");
-    saveRecommendations(toRecommendationRows(analysis).map((rec) => ({ ...rec, status: "open" as const })));
+    await clearRecommendations("ai");
+    await saveRecommendations(toRecommendationRows(analysis).map((rec) => ({ ...rec, status: "open" as const })));
 
     return NextResponse.json({ ok: true, analysis });
   } catch (error) {

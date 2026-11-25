@@ -8,9 +8,9 @@ import { CreativeWorkshopForm } from "./workshop";
 
 export const dynamic = "force-dynamic";
 
-export default function CreativePage() {
-  const snapshot = buildSnapshot(30);
-  const briefs = listCreativeBriefs(10);
+export default async function CreativePage() {
+  const snapshot = await buildSnapshot(30);
+  const briefs = await listCreativeBriefs(10);
 
   // Rank creative on engagement relative to the campaign it sits in, because a
   // 1% CTR is excellent on one channel and poor on another.

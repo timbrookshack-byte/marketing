@@ -247,7 +247,7 @@ export async function askAnalyst(input: {
   assertAiConfigured();
   const client = getClient();
 
-  const snapshot = buildSnapshot(input.days ?? 30);
+  const snapshot = await buildSnapshot(input.days ?? 30);
   const summary = summariseForModel(snapshot, { campaigns: 15, ads: 8 });
   const today = new Date().toISOString().slice(0, 10);
 
@@ -327,8 +327,8 @@ export async function askAnalyst(input: {
       start: z.string().describe("First day, YYYY-MM-DD."),
       end: z.string().describe("Last day, YYYY-MM-DD. Days after today simply have no orders yet."),
     }),
-    run: ({ start, end }) => {
-      const orders = queryOrders({ start, end });
+    run: async ({ start, end }) => {
+      const orders = await queryOrders({ start, end });
       const traceable = orders.filter((order) => order.clickId || order.utmCampaign || order.utmSource);
       const sum = (rows: typeof orders) => rows.reduce((total, order) => total + order.revenue, 0);
 
@@ -374,8 +374,8 @@ export async function askAnalyst(input: {
       start: z.string().describe("First day, YYYY-MM-DD."),
       end: z.string().describe("Last day, YYYY-MM-DD."),
     }),
-    run: ({ start, end }) => {
-      const connected = listConnections();
+    run: async ({ start, end }) => {
+      const connected = await listConnections();
       const hasStore = connected.some((c) => c.kind === "sales");
       const hasAnalytics = connected.some((c) => c.kind === "analytics");
       if (!hasStore || !hasAnalytics) {
@@ -386,7 +386,7 @@ export async function askAnalyst(input: {
         });
       }
 
-      const byChannel = (rows: ReturnType<typeof queryOrders>) => {
+      const byChannel = (rows: Awaited<ReturnType<typeof queryOrders>>) => {
         const out: Record<string, { revenue: number; orders: number }> = {};
         for (const order of rows) {
           const channel = order.utmSource ?? "direct / untagged";
@@ -398,8 +398,8 @@ export async function askAnalyst(input: {
         return out;
       };
 
-      const store = queryOrders({ start, end }, "sales");
-      const analytics = queryOrders({ start, end }, "analytics");
+      const store = await queryOrders({ start, end }, "sales");
+      const analytics = await queryOrders({ start, end }, "analytics");
 
       return JSON.stringify(
         {

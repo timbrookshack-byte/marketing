@@ -18,9 +18,9 @@ const TYPE_LABEL: Record<string, string> = {
   investigate: "Look into it",
 };
 
-export default function RecommendationsPage() {
-  const snapshot = buildSnapshot(30);
-  const stored = listRecommendations();
+export default async function RecommendationsPage() {
+  const snapshot = await buildSnapshot(30);
+  const stored = await listRecommendations();
   const aiRecommendations = stored.filter((rec) => rec.source === "ai");
   const openAi = aiRecommendations.filter((rec) => rec.status === "open");
 

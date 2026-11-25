@@ -14,7 +14,7 @@ export async function POST(request: Request) {
     }
 
     const creatives = entries.map((entry, index) => toExternalCreative(entry, index));
-    const stored = addManualCreatives(body.competitorId ?? null, creatives);
+    const stored = await addManualCreatives(body.competitorId ?? null, creatives);
 
     return NextResponse.json({ ok: true, stored });
   } catch (error) {

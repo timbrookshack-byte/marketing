@@ -27,10 +27,10 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
   const { id } = await context.params;
   const body = (await request.json()) as { action?: string; dailyBudget?: number };
 
-  const campaign = getCampaign(id);
+  const campaign = await getCampaign(id);
   if (!campaign) return NextResponse.json({ error: "Campaign not found" }, { status: 404 });
 
-  const connection = getConnection(campaign.connectionId);
+  const connection = await getConnection(campaign.connectionId);
   if (!connection) return NextResponse.json({ error: "Connection not found" }, { status: 404 });
 
   const action = body.action;
@@ -41,9 +41,9 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
     return NextResponse.json({ error: "dailyBudget must be a positive number" }, { status: 400 });
   }
 
-  const applyLocally = () => {
-    if (action === "pause") setCampaignStatus(campaign.id, "paused");
-    else setCampaignBudget(campaign.id, Number(body.dailyBudget));
+  const applyLocally = async () => {
+    if (action === "pause") await setCampaignStatus(campaign.id, "paused");
+    else await setCampaignBudget(campaign.id, Number(body.dailyBudget));
   };
 
   try {
@@ -51,7 +51,7 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
     const writer = action === "pause" ? connector.pauseCampaign : connector.setCampaignBudget;
 
     if (!writer) {
-      logAction({
+      await logAction({
         connectionId: connection.id,
         scope: "campaign",
         targetId: campaign.id,
@@ -66,12 +66,12 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
       });
     }
 
-    let credentials = loadCredentials(connection.id) ?? {};
+    let credentials = await loadCredentials(connection.id) ?? {};
     const refresh = async () => {
       const client = getOAuthClient(connection.platform);
       if (!connector.oauth || !client) throw new Error("OAuth client is not configured");
       credentials = await refreshAccessToken(connector.oauth, client, credentials);
-      saveCredentials(connection.id, credentials);
+      await saveCredentials(connection.id, credentials);
       return credentials;
     };
     if (connector.oauth && credentials.refreshToken && isExpired(credentials)) await refresh();
@@ -91,7 +91,7 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
 
     if (result.ok) applyLocally();
 
-    logAction({
+    await logAction({
       connectionId: connection.id,
       scope: "campaign",
       targetId: campaign.id,
@@ -104,7 +104,7 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
     return NextResponse.json({ ok: result.ok, detail: result.detail });
   } catch (error) {
     const detail = (error as Error).message;
-    logAction({
+    await logAction({
       connectionId: connection.id,
       scope: "campaign",
       targetId: campaign.id,

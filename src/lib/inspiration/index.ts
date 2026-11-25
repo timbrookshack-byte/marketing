@@ -36,7 +36,7 @@ export async function refreshCompetitor(
   countries: string[],
   limit = 50,
 ): Promise<RefreshResult[]> {
-  const competitor = getCompetitor(competitorId);
+  const competitor = await getCompetitor(competitorId);
   if (!competitor) {
     return [
       {
@@ -70,7 +70,7 @@ export async function refreshCompetitor(
       continue;
     }
 
-    const runId = startInspirationRun(sourceId, competitorId);
+    const runId = await startInspirationRun(sourceId, competitorId);
     try {
       const creatives = await source.search({
         advertiser: competitor.name,
@@ -78,8 +78,8 @@ export async function refreshCompetitor(
         countries,
         limit,
       });
-      const stored = saveCreatives(creatives, competitorId);
-      finishInspirationRun(runId, "success", stored);
+      const stored = await saveCreatives(creatives, competitorId);
+      await finishInspirationRun(runId, "success", stored);
       results.push({
         source: sourceId,
         competitorId,
@@ -94,7 +94,7 @@ export async function refreshCompetitor(
       });
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      finishInspirationRun(runId, "error", 0, message);
+      await finishInspirationRun(runId, "error", 0, message);
       results.push({
         source: sourceId,
         competitorId,
@@ -115,22 +115,22 @@ export async function refreshAllCompetitors(
   countries: string[],
 ): Promise<RefreshResult[]> {
   const results: RefreshResult[] = [];
-  for (const competitor of listCompetitors()) {
+  for (const competitor of await listCompetitors()) {
     results.push(...(await refreshCompetitor(competitor.id, sourceIds, countries)));
   }
   return results;
 }
 
 /** Stores hand-entered creatives against a competitor. */
-export function addManualCreatives(
+export async function addManualCreatives(
   competitorId: string | null,
   creatives: ExternalCreative[],
-): number {
-  return saveCreatives(creatives, competitorId);
+): Promise<number> {
+  return await saveCreatives(creatives, competitorId);
 }
 
 export interface InspirationSnapshot {
-  competitors: ReturnType<typeof listCompetitors>;
+  competitors: Awaited<ReturnType<typeof listCompetitors>>;
   /** Every stored creative, scored and ranked by evidence of traction. */
   ranked: ScoredCreative[];
   /** One entry per distinct concept — the grid worth actually looking at. */
@@ -143,8 +143,13 @@ export interface InspirationSnapshot {
   needsSetup: boolean;
 }
 
-export function buildInspirationSnapshot(competitorId?: string): InspirationSnapshot {
-  const stored = listCreatives(competitorId);
+export async function buildInspirationSnapshot(
+  competitorId?: string,
+): Promise<InspirationSnapshot> {
+  const [stored, competitors] = await Promise.all([
+    listCreatives(competitorId),
+    listCompetitors(),
+  ]);
   const ranked = rankByTraction(stored);
   const concepts = dedupeToConcepts(ranked);
   const sources = inspirationCatalog();
@@ -165,7 +170,7 @@ export function buildInspirationSnapshot(competitorId?: string): InspirationSnap
     .sort((a, b) => b.proven - a.proven || b.concepts.length - a.concepts.length);
 
   return {
-    competitors: listCompetitors(),
+    competitors,
     ranked,
     concepts,
     byAdvertiser,

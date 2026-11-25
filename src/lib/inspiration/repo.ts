@@ -1,4 +1,4 @@
-import { getDb } from "../db";
+import { getDatabase } from "../sql/index";
 import { newId, nowISO, stableId } from "../util";
 import { variantKey } from "./traction";
 import type { Competitor, ExternalCreative, InspirationSourceId } from "./types";
@@ -31,27 +31,27 @@ function toCompetitor(row: Row): Competitor {
   };
 }
 
-export function listCompetitors(): Competitor[] {
-  return (getDb().prepare("SELECT * FROM competitors ORDER BY name").all() as Row[]).map(
+export async function listCompetitors(): Promise<Competitor[]> {
+  return ((await getDatabase().prepare("SELECT * FROM competitors ORDER BY name").all()) as Row[]).map(
     toCompetitor,
   );
 }
 
-export function getCompetitor(id: string): Competitor | null {
-  const row = getDb().prepare("SELECT * FROM competitors WHERE id = ?").get(id) as Row | undefined;
+export async function getCompetitor(id: string): Promise<Competitor | null> {
+  const row = (await getDatabase().prepare("SELECT * FROM competitors WHERE id = ?").get([id])) as Row | undefined;
   return row ? toCompetitor(row) : null;
 }
 
-export function upsertCompetitor(input: {
+export async function upsertCompetitor(input: {
   name: string;
   domain?: string | null;
   category?: string | null;
   handles?: Competitor["handles"];
   origin?: Competitor["origin"];
   notes?: string | null;
-}): Competitor {
+}): Promise<Competitor> {
   const id = stableId("comp", input.name.trim().toLowerCase());
-  getDb()
+  await getDatabase()
     .prepare(
       `INSERT INTO competitors (id, name, domain, category, handles, origin, notes, created_at)
        VALUES (@id, @name, @domain, @category, @handles, @origin, @notes, @createdAt)
@@ -73,11 +73,11 @@ export function upsertCompetitor(input: {
       notes: input.notes ?? null,
       createdAt: nowISO(),
     });
-  return getCompetitor(id)!;
+  return (await getCompetitor(id))!;
 }
 
-export function deleteCompetitor(id: string): void {
-  getDb().prepare("DELETE FROM competitors WHERE id = ?").run(id);
+export async function deleteCompetitor(id: string): Promise<void> {
+  await getDatabase().prepare("DELETE FROM competitors WHERE id = ?").run([id]);
 }
 
 // ----------------------------------------------------------------- creatives
@@ -89,11 +89,11 @@ export function deleteCompetitor(id: string): void {
  * restate a start date, and the earliest observation is the honest one. Losing
  * it would silently shorten every longevity score.
  */
-export function saveCreatives(
+export async function saveCreatives(
   creatives: ExternalCreative[],
   competitorId: string | null,
-): number {
-  const db = getDb();
+): Promise<number> {
+  const db = getDatabase();
   const stmt = db.prepare(
     `INSERT INTO external_creatives
        (id, competitor_id, source, platform, external_id, advertiser, headline, body,
@@ -117,9 +117,9 @@ export function saveCreatives(
        fetched_at    = excluded.fetched_at`,
   );
 
-  const run = db.transaction((items: ExternalCreative[]) => {
-    for (const creative of items) {
-      stmt.run({
+  await db.batch(
+    creatives.map((creative) =>
+      stmt.bind({
         id: stableId("xcr", creative.source, creative.externalId),
         competitorId,
         source: creative.source,
@@ -142,11 +142,9 @@ export function saveCreatives(
         variantKey: variantKey(creative),
         raw: JSON.stringify(creative.raw),
         fetchedAt: nowISO(),
-      });
-    }
-  });
-
-  run(creatives);
+      }),
+    ),
+  );
   return creatives.length;
 }
 
@@ -175,51 +173,51 @@ function toCreative(row: Row): ExternalCreative & { competitorId: string | null;
   };
 }
 
-export function listCreatives(competitorId?: string) {
-  const db = getDb();
+export async function listCreatives(competitorId?: string) {
+  const db = getDatabase();
   const rows = (
     competitorId
-      ? db
+      ? await db
           .prepare("SELECT * FROM external_creatives WHERE competitor_id = ? ORDER BY first_seen DESC")
-          .all(competitorId)
-      : db.prepare("SELECT * FROM external_creatives ORDER BY first_seen DESC").all()
+          .all([competitorId])
+      : await db.prepare("SELECT * FROM external_creatives ORDER BY first_seen DESC").all()
   ) as Row[];
   return rows.map(toCreative);
 }
 
-export function deleteCreative(source: string, externalId: string): void {
-  getDb()
+export async function deleteCreative(source: string, externalId: string): Promise<void> {
+  await getDatabase()
     .prepare("DELETE FROM external_creatives WHERE source = ? AND external_id = ?")
-    .run(source, externalId);
+    .run([source, externalId]);
 }
 
 // ---------------------------------------------------------------------- runs
 
-export function startInspirationRun(source: string, competitorId: string | null): string {
+export async function startInspirationRun(source: string, competitorId: string | null): Promise<string> {
   const id = newId("insp");
-  getDb()
+  await getDatabase()
     .prepare(
       "INSERT INTO inspiration_runs (id, started_at, source, competitor_id, status) VALUES (?, ?, ?, ?, 'running')",
     )
-    .run(id, nowISO(), source, competitorId);
+    .run([id, nowISO(), source, competitorId]);
   return id;
 }
 
-export function finishInspirationRun(
+export async function finishInspirationRun(
   id: string,
   status: "success" | "error",
   found: number,
   error?: string,
-): void {
-  getDb()
+): Promise<void> {
+  await getDatabase()
     .prepare("UPDATE inspiration_runs SET finished_at = ?, status = ?, found = ?, error = ? WHERE id = ?")
-    .run(nowISO(), status, found, error ?? null, id);
+    .run([nowISO(), status, found, error ?? null, id]);
 }
 
-export function listInspirationRuns(limit = 15) {
-  const rows = getDb()
+export async function listInspirationRuns(limit = 15) {
+  const rows = (await getDatabase()
     .prepare("SELECT * FROM inspiration_runs ORDER BY started_at DESC LIMIT ?")
-    .all(limit) as Row[];
+    .all([limit])) as Row[];
   return rows.map((row) => ({
     id: row.id as string,
     startedAt: row.started_at as string,
@@ -245,30 +243,21 @@ export interface StoredAngleReport {
   caveats: string[];
 }
 
-export function saveAngleReport(report: Omit<StoredAngleReport, "id" | "createdAt">): string {
+export async function saveAngleReport(report: Omit<StoredAngleReport, "id" | "createdAt">): Promise<string> {
   const id = newId("angle");
-  getDb()
+  await getDatabase()
     .prepare(
       `INSERT INTO angle_reports (id, created_at, market, summary, angles, gaps, concepts, caveats)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
     )
-    .run(
-      id,
-      nowISO(),
-      report.market,
-      report.summary,
-      JSON.stringify(report.angles),
-      JSON.stringify(report.gaps),
-      JSON.stringify(report.concepts),
-      JSON.stringify(report.caveats),
-    );
+    .run([id, nowISO(), report.market, report.summary, JSON.stringify(report.angles), JSON.stringify(report.gaps), JSON.stringify(report.concepts), JSON.stringify(report.caveats)]);
   return id;
 }
 
-export function latestAngleReport(): StoredAngleReport | null {
-  const row = getDb()
+export async function latestAngleReport(): Promise<StoredAngleReport | null> {
+  const row = (await getDatabase()
     .prepare("SELECT * FROM angle_reports ORDER BY created_at DESC LIMIT 1")
-    .get() as Row | undefined;
+    .get()) as Row | undefined;
   if (!row) return null;
   return {
     id: row.id as string,

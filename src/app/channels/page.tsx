@@ -6,8 +6,8 @@ import { Card, ChannelDot, EmptyState, Money, PrimaryLink, TableWrap, Td, Th } f
 
 export const dynamic = "force-dynamic";
 
-export default function ChannelsPage() {
-  const snapshot = buildSnapshot(30);
+export default async function ChannelsPage() {
+  const snapshot = await buildSnapshot(30);
 
   if (snapshot.isEmpty) {
     return (

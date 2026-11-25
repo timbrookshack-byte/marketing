@@ -147,7 +147,7 @@ export async function prepare(
 ): Promise<Ready | null> {
   heading("Connection");
 
-  const connection = findConnectionByPlatform(platform);
+  const connection = await findConnectionByPlatform(platform);
   if (!connection) {
     console.log(`No ${platform} connection in the database. Connect it on /connections first.`);
     return null;
@@ -164,7 +164,7 @@ export async function prepare(
 
   let credentials: Credentials;
   try {
-    credentials = loadCredentials(connection.id) ?? {};
+    credentials = await loadCredentials(connection.id) ?? {};
   } catch (error) {
     if (error instanceof CredentialsUnreadableError) {
       console.log(
@@ -209,7 +209,7 @@ export async function prepare(
     }
     console.log("\nToken is expired — renewing before testing.");
     credentials = await refreshAccessToken(connector.oauth, client, credentials);
-    saveCredentials(connection.id, credentials);
+    await saveCredentials(connection.id, credentials);
     console.log("Renewed and saved.");
   }
 

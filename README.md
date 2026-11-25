@@ -167,8 +167,6 @@ nvm use 22
 Connect a revenue source first — Shopify or Stripe. Without real orders every channel is judged on
 its own marketing, which is the thing this tool exists to stop.
 
-If you seeded demo data before it was removed from the project, `npm run db:purge-demo` deletes it
-and everything derived from it.
 
 ### When Meta Ads syncs but returns nothing
 
@@ -395,7 +393,6 @@ Demo connections never call out; they update locally and say so.
 | `npm run build` / `npm start` | Production build and serve |
 | `npm run typecheck` | `tsc --noEmit` |
 | `npm run db:migrate` | Create or update the schema |
-| `npm run db:purge-demo` | Delete demo data left over from an older install |
 | `npm run doctor:google` | Diagnose a Google Ads connection — see below |
 | `npm run doctor:meta` | Diagnose a Meta Ads connection, including a sync that returns no rows |
 | `npm run doctor:shopify` | Show what evidence of an ad click recent orders actually carry |

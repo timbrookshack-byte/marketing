@@ -14,7 +14,6 @@
     "typecheck": "tsc --noEmit",
     "db:migrate": "tsx scripts/migrate.ts",
     "setup": "npm run db:migrate",
-    "db:purge-demo": "tsx scripts/purge-demo.ts",
     "doctor:google": "tsx scripts/doctor-google.ts",
     "doctor:meta": "tsx scripts/doctor-meta.ts",
     "doctor:shopify": "tsx scripts/doctor-shopify.ts",

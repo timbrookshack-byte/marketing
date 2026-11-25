@@ -30,8 +30,8 @@ const METHOD_NOTE: Record<string, string> = {
   unattributed: "No click id, no campaign tag. Organic, direct, email — or paid traffic whose tracking broke.",
 };
 
-export default function SalesPage() {
-  const snapshot = buildSnapshot(30);
+export default async function SalesPage() {
+  const snapshot = await buildSnapshot(30);
 
   if (snapshot.attribution.length === 0) {
     return (

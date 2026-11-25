@@ -14,6 +14,6 @@ export async function PATCH(request: Request, context: { params: Promise<{ id: s
     return NextResponse.json({ error: `status must be one of ${ALLOWED.join(", ")}` }, { status: 400 });
   }
 
-  setRecommendationStatus(id, body.status);
+  await setRecommendationStatus(id, body.status);
   return NextResponse.json({ ok: true, status: body.status });
 }

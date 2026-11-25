@@ -83,7 +83,7 @@ export async function POST(request: Request) {
       externalAccountId = config.storeUrl;
     }
 
-    const connection = upsertConnection({
+    const connection = await upsertConnection({
       platform: connector.platform,
       kind: connector.kind,
       displayName: body.displayName?.trim() || `${connector.displayName}${externalAccountId ? ` — ${externalAccountId}` : ""}`,
@@ -93,7 +93,7 @@ export async function POST(request: Request) {
       config,
     });
 
-    saveCredentials(connection.id, credentials);
+    await saveCredentials(connection.id, credentials);
 
     if (body.syncNow === false) {
       return NextResponse.json({ ok: true, connectionId: connection.id });
@@ -111,7 +111,7 @@ export async function POST(request: Request) {
       });
     }
 
-    setConnectionStatus(connection.id, "connected");
+    await setConnectionStatus(connection.id, "connected");
     return NextResponse.json({
       ok: true,
       connectionId: connection.id,

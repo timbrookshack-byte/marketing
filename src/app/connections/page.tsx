@@ -27,8 +27,8 @@ export default async function ConnectionsPage({
   // Without this the whole handshake could fail and the page would look idle.
   const { connected, error } = await searchParams;
   const entries = catalog();
-  const connections = listConnections();
-  const runs = listSyncRuns(12);
+  const connections = await listConnections();
+  const runs = await listSyncRuns(12);
   const connectionByPlatform = new Map(connections.map((c) => [c.platform, c]));
 
   const adPlatforms = entries.filter((entry) => entry.kind === "ads");
@@ -134,7 +134,7 @@ function PlatformCard({
   connection,
 }: {
   entry: ReturnType<typeof catalog>[number];
-  connection: ReturnType<typeof listConnections>[number] | undefined;
+  connection: Awaited<ReturnType<typeof listConnections>>[number] | undefined;
 }) {
   const status = STATUS_COPY[connection?.status ?? "disconnected"];
 

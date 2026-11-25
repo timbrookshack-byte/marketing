@@ -21,7 +21,7 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Channel and audience are both required." }, { status: 400 });
     }
 
-    const snapshot = buildSnapshot(30);
+    const snapshot = await buildSnapshot(30);
     const workshop = await workshopCreative({
       platform: body.platform,
       objective: body.objective ?? "Drive a first purchase",
@@ -30,7 +30,7 @@ export async function POST(request: Request) {
       snapshot,
     });
 
-    saveCreativeBrief({
+    await saveCreativeBrief({
       platform: body.platform,
       objective: body.objective ?? "Drive a first purchase",
       audience: body.audience,

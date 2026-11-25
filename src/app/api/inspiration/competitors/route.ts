@@ -5,7 +5,7 @@ import type { Competitor } from "@/lib/inspiration";
 export const dynamic = "force-dynamic";
 
 export async function GET() {
-  return NextResponse.json({ ok: true, competitors: listCompetitors() });
+  return NextResponse.json({ ok: true, competitors: await listCompetitors() });
 }
 
 export async function POST(request: Request) {
@@ -23,7 +23,7 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "A brand name is required." }, { status: 400 });
     }
 
-    const competitor = upsertCompetitor({
+    const competitor = await upsertCompetitor({
       name: body.name,
       domain: body.domain || null,
       category: body.category || null,

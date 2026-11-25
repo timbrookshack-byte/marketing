@@ -5,10 +5,10 @@ export const dynamic = "force-dynamic";
 
 export async function DELETE(_request: Request, context: { params: Promise<{ id: string }> }) {
   const { id } = await context.params;
-  if (!getCompetitor(id)) {
+  if (!await getCompetitor(id)) {
     return NextResponse.json({ error: "Competitor not found" }, { status: 404 });
   }
   // Their stored creatives cascade with them.
-  deleteCompetitor(id);
+  await deleteCompetitor(id);
   return NextResponse.json({ ok: true });
 }

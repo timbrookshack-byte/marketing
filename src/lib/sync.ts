@@ -37,7 +37,7 @@ export interface SyncResult {
 
 async function buildContext(connection: Connection): Promise<ConnectorContext> {
   const connector = getConnector(connection.platform);
-  let credentials = loadCredentials(connection.id) ?? {};
+  let credentials = await loadCredentials(connection.id) ?? {};
 
   const refresh = async () => {
     if (!connector.oauth) return credentials;
@@ -50,7 +50,7 @@ async function buildContext(connection: Connection): Promise<ConnectorContext> {
       );
     }
     credentials = await refreshAccessToken(connector.oauth, client, credentials);
-    saveCredentials(connection.id, credentials);
+    await saveCredentials(connection.id, credentials);
     return credentials;
   };
 
@@ -73,12 +73,12 @@ export async function syncConnection(
   connectionId: string,
   range: DateRange = trailingWindow(90),
 ): Promise<SyncResult> {
-  const connection = getConnection(connectionId);
+  const connection = await getConnection(connectionId);
   if (!connection) {
     return { connectionId, platform: "unknown", status: "error", rowsIngested: 0, error: "Connection not found" };
   }
 
-  const runId = startSyncRun(connectionId);
+  const runId = await startSyncRun(connectionId);
   const connector = getConnector(connection.platform);
 
   try {
@@ -88,37 +88,37 @@ export async function syncConnection(
 
     if (connector.kind === "ads") {
       const snapshot = await connector.fetchEntities(ctx);
-      upsertCampaigns(snapshot.campaigns);
-      const groupResult = upsertAdGroups(snapshot.adGroups);
-      const adResult = upsertAds(snapshot.ads);
+      await upsertCampaigns(snapshot.campaigns);
+      const groupResult = await upsertAdGroups(snapshot.adGroups);
+      const adResult = await upsertAds(snapshot.ads);
       orphaned = groupResult.orphaned + adResult.orphaned;
 
       const metrics = await connector.fetchMetrics(ctx, range);
-      rows = upsertMetrics(metrics);
+      rows = await upsertMetrics(metrics);
     } else {
       const orders = await connector.fetchOrders(ctx, range);
-      rows = upsertOrders(orders);
+      rows = await upsertOrders(orders);
     }
 
     // Reported rather than swallowed: rows dropped for a missing parent mean the
     // connector and the platform disagree about what exists, which is worth
     // seeing in the sync history even though the sync itself succeeded.
-    finishSyncRun(
+    await finishSyncRun(
       runId,
       "success",
       rows,
       orphaned > 0 ? `${orphaned} rows skipped — parent campaign or ad group not in this sync` : undefined,
     );
-    markSynced(connectionId);
-    setConnectionStatus(connectionId, "connected");
+    await markSynced(connectionId);
+    await setConnectionStatus(connectionId, "connected");
     return { connectionId, platform: connection.platform, status: "success", rowsIngested: rows };
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    finishSyncRun(runId, "error", 0, message);
+    await finishSyncRun(runId, "error", 0, message);
     const needsReauth =
       error instanceof CredentialsUnreadableError ||
       (error instanceof ConnectorError && error.needsReauth);
-    setConnectionStatus(connectionId, needsReauth ? "needs_reauth" : "error", message);
+    await setConnectionStatus(connectionId, needsReauth ? "needs_reauth" : "error", message);
     return {
       connectionId,
       platform: connection.platform,
@@ -132,7 +132,7 @@ export async function syncConnection(
 /** Syncs every connection that has credentials, one after another. */
 export async function syncAll(range: DateRange = trailingWindow(90)): Promise<SyncResult[]> {
   const results: SyncResult[] = [];
-  for (const connection of listConnections()) {
+  for (const connection of await listConnections()) {
     results.push(await syncConnection(connection.id, range));
   }
   return results;

@@ -15,10 +15,10 @@ const BAND_COPY: Record<string, { label: string; severity: "good" | "warning" | 
   retired: { label: "They cut it", severity: "critical" },
 };
 
-export default function InspirationPage() {
-  const snapshot = buildInspirationSnapshot();
-  const report = latestAngleReport();
-  const runs = listInspirationRuns(8);
+export default async function InspirationPage() {
+  const snapshot = await buildInspirationSnapshot();
+  const report = await latestAngleReport();
+  const runs = await listInspirationRuns(8);
 
   const proven = snapshot.concepts.filter((item) => item.traction.band === "proven");
   const retired = snapshot.concepts.filter((item) => item.traction.band === "retired");

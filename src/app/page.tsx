@@ -14,8 +14,8 @@ import { Card, EmptyState, Money, PrimaryLink, SeverityBadge, StatTile } from "@
 
 export const dynamic = "force-dynamic";
 
-export default function OverviewPage() {
-  const connections = listConnections();
+export default async function OverviewPage() {
+  const connections = await listConnections();
 
   if (connections.length === 0) {
     return (
@@ -27,7 +27,7 @@ export default function OverviewPage() {
     );
   }
 
-  const snapshot = buildSnapshot(30);
+  const snapshot = await buildSnapshot(30);
 
   if (snapshot.isEmpty) {
     return (

@@ -5,8 +5,8 @@ import { AnalystChat } from "./chat";
 
 export const dynamic = "force-dynamic";
 
-export default function AnalystPage() {
-  const snapshot = buildSnapshot(30);
+export default async function AnalystPage() {
+  const snapshot = await buildSnapshot(30);
 
   return (
     <div className="flex flex-col gap-6">

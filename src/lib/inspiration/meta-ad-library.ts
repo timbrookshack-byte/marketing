@@ -67,14 +67,14 @@ interface ArchiveAd {
  * environment variable is set; the variable still wins, since a token from an
  * identity-confirmed app reaches more of the archive than an ordinary one.
  */
-function token(): string {
+async function token(): Promise<string> {
   const fromEnv = process.env.META_AD_LIBRARY_TOKEN ?? process.env.META_ADS_ACCESS_TOKEN;
   if (fromEnv) return fromEnv;
 
-  const connection = findConnectionByPlatform("meta_ads");
+  const connection = await findConnectionByPlatform("meta_ads");
   if (connection) {
     try {
-      const stored = loadCredentials(connection.id);
+      const stored = await loadCredentials(connection.id);
       if (stored?.accessToken) return stored.accessToken as string;
     } catch {
       // Unreadable credentials are the connection's problem to report, not this
@@ -130,7 +130,7 @@ export const metaAdLibrarySource: InspirationSource = {
 
     const page = await request<{ data?: ArchiveAd[]; error?: { message: string } }>(ENDPOINT, {
       query: {
-        access_token: token(),
+        access_token: await token(),
         ad_type: "ALL",
         ad_reached_countries: JSON.stringify(countries),
         ad_active_status: "ALL",

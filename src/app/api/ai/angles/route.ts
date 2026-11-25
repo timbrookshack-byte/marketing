@@ -11,7 +11,7 @@ export async function POST(request: Request) {
     const body = await request.json().catch(() => ({}) as { market?: string; days?: number });
     const report = await analyseAngles({ market: body.market, days: body.days });
 
-    saveAngleReport({
+    await saveAngleReport({
       market: body.market ?? null,
       summary: report.summary,
       angles: report.angles,
