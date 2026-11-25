@@ -45,7 +45,7 @@ export async function GET(_request: Request, context: { params: Promise<{ platfo
   }
 
   const state = randomToken();
-  const pkce = connector.oauth.usePkce ? pkcePair() : null;
+  const pkce = connector.oauth.usePkce ? await pkcePair() : null;
 
   await saveOAuthState({
     state,

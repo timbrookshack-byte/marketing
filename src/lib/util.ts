@@ -1,13 +1,19 @@
-import crypto from "node:crypto";
+import { base64url, sha1 } from "./hash/sha1";
 
+/**
+ * crypto.getRandomValues and the sync SHA-1 above, rather than node:crypto:
+ * Workers has neither randomBytes nor createHash, and both of these are used
+ * inline in places that cannot await.
+ */
 export function newId(prefix: string): string {
-  return `${prefix}_${crypto.randomBytes(9).toString("base64url")}`;
+  const bytes = new Uint8Array(9);
+  crypto.getRandomValues(bytes);
+  return `${prefix}_${base64url(bytes)}`;
 }
 
 /** Deterministic id so re-syncing the same entity updates it instead of duplicating. */
 export function stableId(prefix: string, ...parts: string[]): string {
-  const hash = crypto.createHash("sha1").update(parts.join("::")).digest("base64url");
-  return `${prefix}_${hash.slice(0, 16)}`;
+  return `${prefix}_${base64url(sha1(parts.join("::"))).slice(0, 16)}`;
 }
 
 export function todayISO(): string {

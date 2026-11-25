@@ -194,7 +194,7 @@ export async function clearConnectionData(connectionId: string): Promise<{ campa
 export async function saveCredentials(connectionId: string, credentials: Credentials): Promise<void> {
   await getDatabase()
     .prepare("UPDATE connections SET credentials = ? WHERE id = ?")
-    .run([encryptJson(credentials), connectionId]);
+    .run([await encryptJson(credentials), connectionId]);
 }
 
 /**
@@ -224,7 +224,7 @@ export async function loadCredentials(connectionId: string): Promise<Credentials
     .get([connectionId])) as { credentials: string | null } | undefined;
   if (!row?.credentials) return null;
   try {
-    return decryptJson<Credentials>(row.credentials);
+    return await decryptJson<Credentials>(row.credentials);
   } catch {
     throw new CredentialsUnreadableError();
   }
