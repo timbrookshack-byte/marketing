@@ -7,7 +7,7 @@
  * typechecked without the Workers toolchain installed.
  */
 
-import { schemaStatements } from "./schema";
+import { isAlreadyApplied, migrationStatements, schemaStatements } from "./schema";
 import {
   normaliseAll,
   toPositional,
@@ -107,6 +107,17 @@ export async function migrateD1(db: D1Like): Promise<void> {
       throw new Error(
         `Applying the schema failed at ${name ?? "an unnamed statement"}: ${(error as Error).message}`,
       );
+    }
+  }
+
+  // Each of these fails once it has been applied; anything else is real.
+  for (const statement of migrationStatements()) {
+    try {
+      await db.exec(statement.replace(/\s+/g, " "));
+    } catch (error) {
+      if (!isAlreadyApplied(error)) {
+        throw new Error(`Applying a migration failed: ${(error as Error).message}`);
+      }
     }
   }
 }

@@ -12,7 +12,7 @@ import fs from "node:fs";
 import { createRequire } from "node:module";
 import path from "node:path";
 
-import { schemaStatements } from "./schema";
+import { isAlreadyApplied, migrationStatements, schemaStatements } from "./schema";
 import {
   normaliseAll,
   toPositional,
@@ -119,6 +119,15 @@ export function sqliteDatabase(): SqliteDatabase {
   db.pragma("journal_mode = WAL");
   db.pragma("foreign_keys = ON");
   for (const statement of schemaStatements()) db.exec(statement);
+
+  // Each of these fails once it has been applied; anything else is real.
+  for (const statement of migrationStatements()) {
+    try {
+      db.exec(statement);
+    } catch (error) {
+      if (!isAlreadyApplied(error)) throw error;
+    }
+  }
 
   cached = new SqliteDatabase(db);
   return cached;

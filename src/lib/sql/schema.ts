@@ -170,8 +170,64 @@ export const SCHEMA = `
       action        TEXT NOT NULL,
       payload       TEXT NOT NULL DEFAULT '{}',
       result        TEXT NOT NULL,
+      detail        TEXT,
+      /*
+       * Who asked for this, and under which proposal.
+       *
+       * Added when writes stopped being something only a person sitting in
+       * front of the portal could start. A log that cannot distinguish a
+       * change an assistant proposed from one an operator made by hand cannot
+       * answer the only question that matters after a bad change.
+       *
+       * Both are nullable: rows written before this existed have neither, and
+       * a change made directly in the portal has an actor but no proposal.
+       */
+      actor         TEXT,
+      proposal_id   TEXT
+    );
+
+    /*
+     * Changes asked for but not yet made.
+     *
+     * The portal could already pause a campaign and move a budget, and did it
+     * the moment it was asked. That was tolerable while the only way to ask
+     * was a person clicking a button in a browser. It stops being tolerable
+     * once an assistant can ask, so every write now becomes a proposal first
+     * and reaches the platform only when a person approves it.
+     *
+     * 'before' is the state captured when the proposal was made, which is what
+     * makes a proposal reviewable ("$40 -> $120", not "$120") and what lets a
+     * change be put back. 'guardrails' holds what the policy said at the time:
+     * kept rather than recomputed, because the caps may have been edited since
+     * and the question later is always what was known when it was approved.
+     */
+    CREATE TABLE IF NOT EXISTS change_proposals (
+      id            TEXT PRIMARY KEY,
+      created_at    TEXT NOT NULL,
+      created_by    TEXT NOT NULL,
+      connection_id TEXT NOT NULL,
+      platform      TEXT NOT NULL,
+      scope         TEXT NOT NULL,
+      target_id     TEXT NOT NULL,
+      target_name   TEXT NOT NULL,
+      action        TEXT NOT NULL,
+      payload       TEXT NOT NULL DEFAULT '{}',
+      before        TEXT NOT NULL DEFAULT '{}',
+      rationale     TEXT,
+      status        TEXT NOT NULL DEFAULT 'pending',
+      guardrails    TEXT NOT NULL DEFAULT '[]',
+      expires_at    TEXT,
+      decided_at    TEXT,
+      decided_by    TEXT,
+      applied_at    TEXT,
+      result        TEXT,
       detail        TEXT
     );
+
+    CREATE INDEX IF NOT EXISTS idx_proposals_status
+      ON change_proposals (status, created_at);
+    CREATE INDEX IF NOT EXISTS idx_proposals_target
+      ON change_proposals (target_id, created_at);
 
     CREATE TABLE IF NOT EXISTS settings (
       key   TEXT PRIMARY KEY,
@@ -309,4 +365,35 @@ export function schemaStatements(): string[] {
   const trailing = current.trim();
   if (trailing) statements.push(`${trailing};`);
   return statements;
+}
+
+/**
+ * Changes to tables that already exist.
+ *
+ * Everything above is written as CREATE TABLE IF NOT EXISTS, which is exactly
+ * right for a fresh database and does nothing at all for one that already has
+ * the table. A column added to a CREATE above therefore appears only in
+ * databases created after it was added — silently, since no statement fails.
+ *
+ * These run after the schema, and each is expected to fail once the column is
+ * there. SQLite has no ADD COLUMN IF NOT EXISTS, so the caller tolerates the
+ * duplicate-column error and nothing else; see `isAlreadyApplied`.
+ */
+export function migrationStatements(): string[] {
+  return [
+    "ALTER TABLE action_log ADD COLUMN actor TEXT;",
+    "ALTER TABLE action_log ADD COLUMN proposal_id TEXT;",
+  ];
+}
+
+/**
+ * Whether a failed migration is one that had already been applied.
+ *
+ * Narrow on purpose: it matches the one message SQLite and D1 give for a
+ * column that is already there, so a genuine error in a migration — a typo, a
+ * missing table — still stops the startup rather than being swallowed.
+ */
+export function isAlreadyApplied(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error);
+  return /duplicate column name/i.test(message);
 }
