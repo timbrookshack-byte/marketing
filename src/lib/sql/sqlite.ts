@@ -7,8 +7,9 @@
  * that resolve immediately — no concurrency is gained, and none is wanted here.
  */
 
-import Database from "better-sqlite3";
+import type BetterSqlite3 from "better-sqlite3";
 import fs from "node:fs";
+import { createRequire } from "node:module";
 import path from "node:path";
 
 import { schemaStatements } from "./schema";
@@ -22,9 +23,32 @@ import {
   type SqlRow,
 } from "./driver";
 
+type DatabaseInstance = BetterSqlite3.Database;
+type StatementInstance = BetterSqlite3.Statement;
+type DatabaseConstructor = new (file: string) => DatabaseInstance;
+
+/**
+ * The package name, held in a variable rather than written into an import.
+ *
+ * A static `import Database from "better-sqlite3"` makes Next trace the native
+ * package into its standalone output, which the Cloudflare adapter then
+ * mirrors as a symlink. Windows forbids creating symlinks without elevation,
+ * so the Workers build died with EPERM on the one package a Worker never
+ * loads: there the driver is D1. Resolving it at call time keeps it out of the
+ * build graph while leaving local use unchanged.
+ *
+ * The type import above is erased by TypeScript, so it costs nothing here.
+ */
+const NATIVE_DRIVER = "better-sqlite3";
+
+function loadDriver(): DatabaseConstructor {
+  const load = createRequire(path.join(process.cwd(), "package.json"));
+  return load(NATIVE_DRIVER) as DatabaseConstructor;
+}
+
 class SqliteStatement implements PreparedStatement {
   constructor(
-    private readonly db: Database.Database,
+    private readonly db: DatabaseInstance,
     private readonly sql: string,
   ) {}
 
@@ -33,7 +57,7 @@ class SqliteStatement implements PreparedStatement {
     return { sql, values };
   }
 
-  private statement(params?: BindParams): { stmt: Database.Statement; values: unknown[] } {
+  private statement(params?: BindParams): { stmt: StatementInstance; values: unknown[] } {
     const { sql, values } = toPositional(this.sql, params);
     return { stmt: this.db.prepare(sql), values: normaliseAll(values) };
   }
@@ -61,7 +85,7 @@ class SqliteStatement implements PreparedStatement {
 }
 
 export class SqliteDatabase implements SqlDatabase {
-  constructor(private readonly db: Database.Database) {}
+  constructor(private readonly db: DatabaseInstance) {}
 
   prepare(sql: string): PreparedStatement {
     return new SqliteStatement(this.db, sql);
@@ -90,6 +114,7 @@ export function sqliteDatabase(): SqliteDatabase {
     process.env.DATABASE_PATH ?? path.join(process.cwd(), "data", "marketing360.db");
   fs.mkdirSync(path.dirname(file), { recursive: true });
 
+  const Database = loadDriver();
   const db = new Database(file);
   db.pragma("journal_mode = WAL");
   db.pragma("foreign_keys = ON");
