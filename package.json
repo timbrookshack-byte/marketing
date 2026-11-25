@@ -24,7 +24,8 @@
     "cf:schema": "tsx scripts/d1-schema.ts",
     "cf:secrets": "tsx scripts/cf-secrets.ts",
     "test:policy": "tsx scripts/test-policy.ts",
-    "test:proposals": "tsx scripts/test-proposals.ts"
+    "test:proposals": "tsx scripts/test-proposals.ts",
+    "test:mcp": "tsx scripts/test-mcp.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.125.0",
