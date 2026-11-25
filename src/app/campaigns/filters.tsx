@@ -84,7 +84,7 @@ export function CampaignTable({
               onClick={() => setView(option.key)}
               className={`px-2.5 py-1 text-[12px] transition-colors first:rounded-l-lg last:rounded-r-lg ${
                 view === option.key
-                  ? "bg-[var(--text-primary)] text-[var(--surface)]"
+                  ? "bg-[var(--text-primary)] text-[var(--surface-1)]"
                   : "text-[var(--text-secondary)] hover:bg-[var(--surface-sunken)]"
               }`}
             >
@@ -100,7 +100,7 @@ export function CampaignTable({
               onClick={() => setPlatform("all")}
               className={`px-2.5 py-1 text-[12px] transition-colors rounded-l-lg ${
                 platform === "all"
-                  ? "bg-[var(--text-primary)] text-[var(--surface)]"
+                  ? "bg-[var(--text-primary)] text-[var(--surface-1)]"
                   : "text-[var(--text-secondary)] hover:bg-[var(--surface-sunken)]"
               }`}
             >
@@ -113,7 +113,7 @@ export function CampaignTable({
                 onClick={() => setPlatform(key)}
                 className={`px-2.5 py-1 text-[12px] transition-colors last:rounded-r-lg ${
                   platform === key
-                    ? "bg-[var(--text-primary)] text-[var(--surface)]"
+                    ? "bg-[var(--text-primary)] text-[var(--surface-1)]"
                     : "text-[var(--text-secondary)] hover:bg-[var(--surface-sunken)]"
                 }`}
               >

@@ -18,9 +18,9 @@ function Button({
 }) {
   const palette =
     tone === "primary"
-      ? "bg-[var(--text-primary)] text-[var(--surface)] hover:opacity-90"
+      ? "bg-[var(--text-primary)] text-[var(--surface-1)] hover:opacity-90"
       : tone === "danger"
-        ? "text-[var(--danger,#b4232a)] hover:bg-[var(--surface-sunken)]"
+        ? "text-[var(--status-critical)] hover:bg-[var(--surface-sunken)]"
         : "hover:bg-[var(--surface-sunken)]";
   return (
     <button
@@ -70,7 +70,7 @@ export function DecideButtons({ id }: { id: string }) {
         </Button>
       </div>
       {error ? (
-        <p className="max-w-[320px] text-right text-[12px] text-[var(--danger,#b4232a)]">{error}</p>
+        <p className="max-w-[320px] text-right text-[12px] text-[var(--status-critical)]">{error}</p>
       ) : null}
     </div>
   );
@@ -204,7 +204,7 @@ export function CapsForm({ initial }: { initial: Caps }) {
         </Button>
         {message ? <span className="text-[12px] text-[var(--text-muted)]">{message}</span> : null}
         {error ? (
-          <span className="text-[12px] text-[var(--danger,#b4232a)]">{error}</span>
+          <span className="text-[12px] text-[var(--status-critical)]">{error}</span>
         ) : null}
       </div>
     </div>

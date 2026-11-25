@@ -347,11 +347,31 @@ export function EfficiencyScatter({
   if (data.length === 0) return <EmptyPlot height={height} message="No campaigns with spend yet." />;
 
   const maxX = niceCeil(Math.max(...data.map((d) => d.x)) * 1.12);
-  const maxY = niceCeil(Math.max(target * 1.3, ...data.map((d) => d.y)) * 1.1);
+
+  /*
+   * The vertical scale is capped rather than fitted to the largest return.
+   *
+   * This chart answers two questions: is a campaign above break-even, and is
+   * it above target. Resolution beyond roughly twice target adds nothing to
+   * either -- 60x and 256x are both simply "excellent" -- while a single
+   * campaign at 256x flattens every other dot onto the axis, which is the one
+   * outcome that makes the chart useless. A brand-search campaign does this
+   * routinely, because it is measured against spend it would have earned
+   * anyway.
+   *
+   * So the axis covers the range where judgement happens, and anything above
+   * it is drawn on the top line with a marker saying it goes higher. Nothing
+   * is hidden: the real figure is on the dot's label and in the hover.
+   */
+  const returns = data.map((d) => d.y).sort((a, b) => a - b);
+  const ninetieth = returns[Math.min(returns.length - 1, Math.floor(returns.length * 0.9))] ?? 0;
+  const maxY = niceCeil(Math.max(target * 2, breakEven * 2, ninetieth) * 1.1);
+  const beyond = data.filter((d) => d.y > maxY);
   const maxSize = Math.max(1, ...data.map((d) => d.size));
 
   const xFor = (value: number) => padding.left + (value / maxX) * plotWidth;
-  const yFor = (value: number) => padding.top + plotHeight - (value / maxY) * plotHeight;
+  const yFor = (value: number) =>
+    padding.top + plotHeight - (Math.min(value, maxY) / maxY) * plotHeight;
   // Area, not radius, carries magnitude — radius would exaggerate it.
   const rFor = (value: number) => 5 + Math.sqrt(safeDiv(value, maxSize)) * 13;
 
@@ -371,6 +391,16 @@ export function EfficiencyScatter({
       </figcaption>
       <p className="mb-3 text-[12px] text-[var(--text-muted)]">
         Dot size is monthly spend. Anything below the break-even line loses money on every sale.
+        {beyond.length > 0 ? (
+          <>
+            {" "}
+            The scale stops at {maxY.toFixed(0)}x, so{" "}
+            {beyond.length === 1
+              ? `${beyond[0].label} sits on the top line at ${beyond[0].y.toFixed(0)}x`
+              : `${beyond.length} campaigns sit on the top line`}
+            {" "}rather than flattening everything else.
+          </>
+        ) : null}
       </p>
       <div className="relative">
         <svg viewBox={`0 0 ${width} ${height}`} className="w-full" style={{ height }} role="img">
@@ -403,7 +433,13 @@ export function EfficiencyScatter({
             stroke="var(--status-critical)"
             strokeWidth={1.5}
           />
-          <text x={width - padding.right} y={yFor(breakEven) - 6} textAnchor="end" fontSize={11} fill="var(--status-critical)">
+          <text
+            x={width - padding.right}
+            y={yFor(breakEven) - 6}
+            textAnchor="end"
+            fontSize={11}
+            fill="var(--status-critical)"
+          >
             break-even {breakEven.toFixed(2)}x
           </text>
 
@@ -415,25 +451,71 @@ export function EfficiencyScatter({
             stroke="var(--status-good)"
             strokeWidth={1.5}
           />
-          <text x={width - padding.right} y={yFor(target) - 6} textAnchor="end" fontSize={11} fill="var(--status-good)">
+          {/*
+            * Both labels sit at the right edge, so when the two lines are close
+            * they print on top of each other. Rather than clip or overlap, the
+            * target label moves to the opposite end, where it can never collide
+            * whatever the scale does.
+            */}
+          <text
+            x={
+              Math.abs(yFor(target) - yFor(breakEven)) < 14
+                ? padding.left + 4
+                : width - padding.right
+            }
+            y={yFor(target) - 6}
+            textAnchor={
+              Math.abs(yFor(target) - yFor(breakEven)) < 14 ? "start" : "end"
+            }
+            fontSize={11}
+            fill="var(--status-good)"
+          >
             target {target.toFixed(1)}x
           </text>
 
-          {data.map((datum) => (
-            <g key={datum.label}>
-              <circle
-                cx={xFor(datum.x)}
-                cy={yFor(datum.y)}
-                r={rFor(datum.size)}
-                fill={statusColor(datum.status)}
-                fillOpacity={hover && hover.label !== datum.label ? 0.25 : 0.55}
-                stroke="var(--surface-1)"
-                strokeWidth={2}
-                onMouseEnter={() => setHover(datum)}
-                onMouseLeave={() => setHover(null)}
-              />
-            </g>
-          ))}
+          {data.map((datum) => {
+            const pinned = datum.y > maxY;
+            const cx = xFor(datum.x);
+            const cy = yFor(datum.y);
+            const r = rFor(datum.size);
+            return (
+              <g key={datum.label}>
+                <circle
+                  cx={cx}
+                  cy={cy}
+                  r={r}
+                  fill={statusColor(datum.status)}
+                  fillOpacity={hover && hover.label !== datum.label ? 0.25 : 0.55}
+                  stroke="var(--surface-1)"
+                  strokeWidth={2}
+                  onMouseEnter={() => setHover(datum)}
+                  onMouseLeave={() => setHover(null)}
+                />
+                {pinned ? (
+                  <>
+                    {/* A chevron, so a pinned dot cannot be misread as sitting at the cap. */}
+                    <path
+                      d={`M ${cx - 5} ${cy - r - 3} L ${cx} ${cy - r - 8} L ${cx + 5} ${cy - r - 3}`}
+                      fill="none"
+                      stroke={statusColor(datum.status)}
+                      strokeWidth={2}
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                    />
+                    <text
+                      x={cx}
+                      y={cy - r - 12}
+                      textAnchor="middle"
+                      fontSize={11}
+                      fill="var(--text-secondary)"
+                    >
+                      {datum.y.toFixed(0)}x
+                    </text>
+                  </>
+                ) : null}
+              </g>
+            );
+          })}
 
           {/* x ticks: without values the horizontal position carries no meaning. */}
           {[0.25, 0.5, 0.75, 1].map((fraction) => (
