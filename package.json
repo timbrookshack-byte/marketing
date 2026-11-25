@@ -18,7 +18,7 @@
     "doctor:meta": "tsx scripts/doctor-meta.ts",
     "doctor:shopify": "tsx scripts/doctor-shopify.ts",
     "doctor:ai": "tsx scripts/doctor-ai.ts",
-    "cf:build": "opennextjs-cloudflare build",
+    "cf:build": "opennextjs-cloudflare build && tsx scripts/cf-sanitise.ts",
     "cf:preview": "opennextjs-cloudflare preview",
     "cf:deploy": "opennextjs-cloudflare deploy",
     "cf:schema": "tsx scripts/d1-schema.ts"
