@@ -32,6 +32,21 @@
   "workers_dev": true,
   "preview_urls": false,
 
+  // The portal's real address. Declared here rather than added in the
+  // dashboard so the hostname travels with the deployment: Cloudflare creates
+  // the DNS record and issues the certificate from this, and a rebuilt account
+  // ends up at the same place without anyone remembering a click.
+  //
+  // workers.dev stays on for now as a way back in if this misbehaves. It can
+  // be switched off once the custom domain is proven; Access protects the
+  // Worker itself, so every hostname it answers on is behind the same policy.
+  "routes": [
+    {
+      "pattern": "shack360marketing.app",
+      "custom_domain": true
+    }
+  ],
+
   "vars": {
     // Read by instrumentation to decide which database driver to install.
     "RUNTIME": "cloudflare",
@@ -39,7 +54,7 @@
     // Where OAuth redirects come back to. Not a secret, so it lives here
     // rather than in a secret. Without it the code falls back to
     // http://localhost:3000 and every platform callback breaks.
-    "APP_BASE_URL": "https://marketing360.timbrookshack.workers.dev"
+    "APP_BASE_URL": "https://shack360marketing.app"
   },
 
   "d1_databases": [
