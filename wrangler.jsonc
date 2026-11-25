@@ -1,0 +1,37 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "marketing360",
+  "main": ".open-next/worker.js",
+
+  // Pinned rather than floating: the runtime's behaviour is part of the build,
+  // and a date that moves on its own is a deployment that changes without a
+  // commit.
+  "compatibility_date": "2026-11-01",
+
+  // Next's server code reaches for a handful of Node built-ins even when the
+  // application does not. Without this the Worker fails to start.
+  "compatibility_flags": ["nodejs_compat"],
+
+  "assets": {
+    "directory": ".open-next/assets",
+    "binding": "ASSETS"
+  },
+
+  "observability": {
+    "enabled": true
+  },
+
+  "vars": {
+    // Read by instrumentation to decide which database driver to install.
+    "RUNTIME": "cloudflare"
+  },
+
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "marketing360",
+      // Filled in from `wrangler d1 create marketing360`.
+      "database_id": "REPLACE_WITH_DATABASE_ID"
+    }
+  ]
+}

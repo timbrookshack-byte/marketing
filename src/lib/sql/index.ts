@@ -23,10 +23,24 @@ import type { SqlDatabase } from "./driver";
  */
 const KEY = "__marketing360_database__";
 
-type Holder = typeof globalThis & { [KEY]?: SqlDatabase };
+type Resolver = () => SqlDatabase;
+type Holder = typeof globalThis & { [KEY]?: Resolver };
+
+/**
+ * Installed as a function, not an instance.
+ *
+ * A SQLite file can be opened once and held for the life of the process. A D1
+ * binding cannot: it is reachable only from inside a request, and the one
+ * belonging to the request being handled is the only one that may be used.
+ * Resolving on each call covers both — the SQLite driver's resolver returns the
+ * same cached handle every time, and D1's returns whichever binding is current.
+ */
+export function setDatabaseResolver(resolve: Resolver): void {
+  (globalThis as Holder)[KEY] = resolve;
+}
 
 export function setDatabase(db: SqlDatabase): void {
-  (globalThis as Holder)[KEY] = db;
+  setDatabaseResolver(() => db);
 }
 
 export function hasDatabase(): boolean {
@@ -34,15 +48,15 @@ export function hasDatabase(): boolean {
 }
 
 export function getDatabase(): SqlDatabase {
-  const installed = (globalThis as Holder)[KEY];
-  if (!installed) {
+  const resolve = (globalThis as Holder)[KEY];
+  if (!resolve) {
     throw new Error(
       "No database has been installed. A Node process installs the local SQLite file by " +
         "importing lib/sql/node and calling installSqlite(); the Workers entry point installs " +
         "the request's D1 binding. One of the two has to run before anything reads data.",
     );
   }
-  return installed;
+  return resolve();
 }
 
 export type { SqlDatabase, PreparedStatement, BoundStatement, SqlRow } from "./driver";
