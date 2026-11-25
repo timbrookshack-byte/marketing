@@ -1,4 +1,5 @@
-import { getDb } from "./db";
+import { getDatabase } from "./sql/index";
+import type { SqlDatabase } from "./sql/driver";
 import { decryptJson, encryptJson } from "./crypto";
 import { newId, nowISO, stableId } from "./util";
 import type {
@@ -34,6 +35,39 @@ function parseJson<T>(value: unknown, fallback: T): T {
   }
 }
 
+/**
+ * Which of these parent rows exist, in one query.
+ *
+ * The upserts below need to know before writing, and a batch cannot read. One
+ * query per child row would have worked locally and been a round trip each on
+ * D1; asking once for the whole set is both correct here and cheaper there.
+ *
+ * Chunked because SQLite has a bound-variable limit, and a sync of a large
+ * account would otherwise exceed it.
+ */
+async function idsPresentIn(
+  db: SqlDatabase,
+  table: "campaigns" | "ad_groups",
+  ids: string[],
+): Promise<Set<string>> {
+  const unique = [...new Set(ids)];
+  const found = new Set<string>();
+
+  for (let i = 0; i < unique.length; i += 400) {
+    const chunk = unique.slice(i, i + 400);
+    const placeholders = chunk.map(() => "?").join(", ");
+    const rows = (await db
+      .prepare(`SELECT id FROM ${table} WHERE id IN (${placeholders})`)
+      .all(chunk)) as { id: string }[];
+    for (const row of rows) found.add(row.id);
+  }
+
+  return found;
+}
+
+const campaignIdsIn = (db: SqlDatabase, ids: string[]) => idsPresentIn(db, "campaigns", ids);
+const adGroupIdsIn = (db: SqlDatabase, ids: string[]) => idsPresentIn(db, "ad_groups", ids);
+
 // ---------------------------------------------------------------- connections
 
 function toConnection(row: Row): Connection {
@@ -52,25 +86,25 @@ function toConnection(row: Row): Connection {
   };
 }
 
-export function listConnections(kind?: ConnectorKind): Connection[] {
-  const db = getDb();
+export async function listConnections(kind?: ConnectorKind): Promise<Connection[]> {
+  const db = getDatabase();
   const rows = kind
-    ? (db
+    ? ((await db
         .prepare("SELECT * FROM connections WHERE kind = ? ORDER BY display_name")
-        .all(kind) as Row[])
-    : (db.prepare("SELECT * FROM connections ORDER BY kind, display_name").all() as Row[]);
+        .all([kind])) as Row[])
+    : ((await db.prepare("SELECT * FROM connections ORDER BY kind, display_name").all()) as Row[]);
   return rows.map(toConnection);
 }
 
-export function getConnection(id: string): Connection | null {
-  const row = getDb().prepare("SELECT * FROM connections WHERE id = ?").get(id) as Row | undefined;
+export async function getConnection(id: string): Promise<Connection | null> {
+  const row = (await getDatabase().prepare("SELECT * FROM connections WHERE id = ?").get([id])) as Row | undefined;
   return row ? toConnection(row) : null;
 }
 
-export function findConnectionByPlatform(platform: PlatformId): Connection | null {
-  const row = getDb()
+export async function findConnectionByPlatform(platform: PlatformId): Promise<Connection | null> {
+  const row = (await getDatabase()
     .prepare("SELECT * FROM connections WHERE platform = ? ORDER BY created_at LIMIT 1")
-    .get(platform) as Row | undefined;
+    .get([platform])) as Row | undefined;
   return row ? toConnection(row) : null;
 }
 
@@ -85,10 +119,10 @@ export interface UpsertConnectionInput {
   config?: Record<string, unknown>;
 }
 
-export function upsertConnection(input: UpsertConnectionInput): Connection {
-  const db = getDb();
+export async function upsertConnection(input: UpsertConnectionInput): Promise<Connection> {
+  const db = getDatabase();
   const id = input.id ?? stableId("conn", input.platform, input.externalAccountId ?? "default");
-  db.prepare(
+  await db.prepare(
     `INSERT INTO connections
        (id, platform, kind, display_name, external_account_id, status, currency, config, created_at)
      VALUES (@id, @platform, @kind, @displayName, @externalAccountId, @status, @currency, @config, @createdAt)
@@ -109,27 +143,27 @@ export function upsertConnection(input: UpsertConnectionInput): Connection {
     config: JSON.stringify(input.config ?? {}),
     createdAt: nowISO(),
   });
-  return getConnection(id)!;
+  return (await getConnection(id))!;
 }
 
-export function setConnectionStatus(
+export async function setConnectionStatus(
   id: string,
   status: ConnectionStatus,
   lastError: string | null = null,
-): void {
-  getDb()
+): Promise<void> {
+  await getDatabase()
     .prepare("UPDATE connections SET status = ?, last_error = ? WHERE id = ?")
-    .run(status, lastError, id);
+    .run([status, lastError, id]);
 }
 
-export function markSynced(id: string): void {
-  getDb()
+export async function markSynced(id: string): Promise<void> {
+  await getDatabase()
     .prepare("UPDATE connections SET last_sync_at = ?, last_error = NULL WHERE id = ?")
-    .run(nowISO(), id);
+    .run([nowISO(), id]);
 }
 
-export function deleteConnection(id: string): void {
-  getDb().prepare("DELETE FROM connections WHERE id = ?").run(id);
+export async function deleteConnection(id: string): Promise<void> {
+  await getDatabase().prepare("DELETE FROM connections WHERE id = ?").run([id]);
 }
 
 /**
@@ -141,26 +175,26 @@ export function deleteConnection(id: string): void {
  * slate is cleared when the account changes. Credentials are untouched, so the
  * connection stays authorised and the next sync refills it.
  */
-export function clearConnectionData(connectionId: string): {
-  campaigns: number;
-  metrics: number;
-  orders: number;
-} {
-  const db = getDb();
+export async function clearConnectionData(connectionId: string): Promise<{ campaigns: number; metrics: number; orders: number; }> {
+  const db = getDatabase();
   // Ad groups and ads hang off campaigns with ON DELETE CASCADE, so they go too.
-  const run = db.transaction(() => ({
-    campaigns: db.prepare("DELETE FROM campaigns WHERE connection_id = ?").run(connectionId).changes,
-    metrics: db.prepare("DELETE FROM metrics_daily WHERE connection_id = ?").run(connectionId).changes,
-    orders: db.prepare("DELETE FROM sales_orders WHERE connection_id = ?").run(connectionId).changes,
-  }));
-  return run();
+  const [campaigns, metrics, orders] = await db.batch([
+    db.prepare("DELETE FROM campaigns WHERE connection_id = ?").bind([connectionId]),
+    db.prepare("DELETE FROM metrics_daily WHERE connection_id = ?").bind([connectionId]),
+    db.prepare("DELETE FROM sales_orders WHERE connection_id = ?").bind([connectionId]),
+  ]);
+  return {
+    campaigns: campaigns.changes,
+    metrics: metrics.changes,
+    orders: orders.changes,
+  };
 }
 
 /** Credentials are encrypted at rest — only the server ever calls these two. */
-export function saveCredentials(connectionId: string, credentials: Credentials): void {
-  getDb()
+export async function saveCredentials(connectionId: string, credentials: Credentials): Promise<void> {
+  await getDatabase()
     .prepare("UPDATE connections SET credentials = ? WHERE id = ?")
-    .run(encryptJson(credentials), connectionId);
+    .run([encryptJson(credentials), connectionId]);
 }
 
 /**
@@ -184,10 +218,10 @@ export class CredentialsUnreadableError extends Error {
   }
 }
 
-export function loadCredentials(connectionId: string): Credentials | null {
-  const row = getDb()
+export async function loadCredentials(connectionId: string): Promise<Credentials | null> {
+  const row = (await getDatabase()
     .prepare("SELECT credentials FROM connections WHERE id = ?")
-    .get(connectionId) as { credentials: string | null } | undefined;
+    .get([connectionId])) as { credentials: string | null } | undefined;
   if (!row?.credentials) return null;
   try {
     return decryptJson<Credentials>(row.credentials);
@@ -198,38 +232,26 @@ export function loadCredentials(connectionId: string): Credentials | null {
 
 // ---------------------------------------------------------------- oauth state
 
-export function saveOAuthState(input: {
+export async function saveOAuthState(input: {
   state: string;
   platform: PlatformId;
   connectionId?: string | null;
   codeVerifier?: string | null;
   redirectTo?: string | null;
-}): void {
-  getDb()
+}): Promise<void> {
+  await getDatabase()
     .prepare(
       `INSERT INTO oauth_states (state, platform, connection_id, code_verifier, redirect_to, created_at)
        VALUES (?, ?, ?, ?, ?, ?)`,
     )
-    .run(
-      input.state,
-      input.platform,
-      input.connectionId ?? null,
-      input.codeVerifier ?? null,
-      input.redirectTo ?? null,
-      nowISO(),
-    );
+    .run([input.state, input.platform, input.connectionId ?? null, input.codeVerifier ?? null, input.redirectTo ?? null, nowISO()]);
 }
 
-export function consumeOAuthState(state: string): {
-  platform: PlatformId;
-  connectionId: string | null;
-  codeVerifier: string | null;
-  redirectTo: string | null;
-} | null {
-  const db = getDb();
-  const row = db.prepare("SELECT * FROM oauth_states WHERE state = ?").get(state) as Row | undefined;
+export async function consumeOAuthState(state: string): Promise<{ platform: PlatformId; connectionId: string | null; codeVerifier: string | null; redirectTo: string | null; } | null> {
+  const db = getDatabase();
+  const row = (await db.prepare("SELECT * FROM oauth_states WHERE state = ?").get([state])) as Row | undefined;
   if (!row) return null;
-  db.prepare("DELETE FROM oauth_states WHERE state = ?").run(state);
+  await db.prepare("DELETE FROM oauth_states WHERE state = ?").run([state]);
   // States are single-use and short-lived; anything older than an hour is stale.
   const age = Date.now() - Date.parse(row.created_at as string);
   if (age > 3_600_000) return null;
@@ -259,8 +281,8 @@ function toCampaign(row: Row): Campaign {
   };
 }
 
-export function upsertCampaigns(campaigns: Omit<Campaign, "id">[]): void {
-  const db = getDb();
+export async function upsertCampaigns(campaigns: Omit<Campaign, "id">[]): Promise<void> {
+  const db = getDatabase();
   const stmt = db.prepare(
     `INSERT INTO campaigns
        (id, connection_id, platform, external_id, name, status, objective, daily_budget, currency, start_date, end_date)
@@ -274,29 +296,26 @@ export function upsertCampaigns(campaigns: Omit<Campaign, "id">[]): void {
        start_date   = excluded.start_date,
        end_date     = excluded.end_date`,
   );
-  const run = db.transaction((items: Omit<Campaign, "id">[]) => {
-    for (const c of items) {
-      stmt.run({ ...c, id: stableId("cmp", c.connectionId, c.externalId) });
-    }
-  });
-  run(campaigns);
+  await db.batch(
+    campaigns.map((c) => stmt.bind({ ...c, id: stableId("cmp", c.connectionId, c.externalId) })),
+  );
 }
 
-export function listCampaigns(): Campaign[] {
-  return (getDb().prepare("SELECT * FROM campaigns ORDER BY name").all() as Row[]).map(toCampaign);
+export async function listCampaigns(): Promise<Campaign[]> {
+  return ((await getDatabase().prepare("SELECT * FROM campaigns ORDER BY name").all()) as Row[]).map(toCampaign);
 }
 
-export function getCampaign(id: string): Campaign | null {
-  const row = getDb().prepare("SELECT * FROM campaigns WHERE id = ?").get(id) as Row | undefined;
+export async function getCampaign(id: string): Promise<Campaign | null> {
+  const row = (await getDatabase().prepare("SELECT * FROM campaigns WHERE id = ?").get([id])) as Row | undefined;
   return row ? toCampaign(row) : null;
 }
 
-export function setCampaignStatus(id: string, status: Campaign["status"]): void {
-  getDb().prepare("UPDATE campaigns SET status = ? WHERE id = ?").run(status, id);
+export async function setCampaignStatus(id: string, status: Campaign["status"]): Promise<void> {
+  await getDatabase().prepare("UPDATE campaigns SET status = ? WHERE id = ?").run([status, id]);
 }
 
-export function setCampaignBudget(id: string, dailyBudget: number): void {
-  getDb().prepare("UPDATE campaigns SET daily_budget = ? WHERE id = ?").run(dailyBudget, id);
+export async function setCampaignBudget(id: string, dailyBudget: number): Promise<void> {
+  await getDatabase().prepare("UPDATE campaigns SET daily_budget = ? WHERE id = ?").run([dailyBudget, id]);
 }
 
 /**
@@ -310,43 +329,46 @@ export function setCampaignBudget(id: string, dailyBudget: number): void {
  * alongside it. Skipping and counting keeps the sync useful and still says
  * something was wrong.
  */
-export function upsertAdGroups(
+export async function upsertAdGroups(
   groups: (Omit<AdGroup, "id"> & { connectionId: string })[],
-): { inserted: number; orphaned: number } {
-  const db = getDb();
+): Promise<{ inserted: number; orphaned: number; }> {
+  const db = getDatabase();
   const stmt = db.prepare(
     `INSERT INTO ad_groups (id, campaign_id, external_id, name, status)
      VALUES (@id, @campaignId, @externalId, @name, @status)
      ON CONFLICT(campaign_id, external_id) DO UPDATE SET
        name = excluded.name, status = excluded.status`,
   );
-  const hasCampaign = db.prepare("SELECT 1 FROM campaigns WHERE id = ?").pluck();
-  let inserted = 0;
-  let orphaned = 0;
+  // Which parents exist is read once, up front, rather than per row inside the
+  // write. A batch cannot read, and a query per ad group was never worth it
+  // either: one snapshot answers for every row in the set.
+  const existing = await campaignIdsIn(db, groups.map((g) => g.campaignId));
 
-  const run = db.transaction((items: typeof groups) => {
-    for (const g of items) {
-      if (!hasCampaign.get(g.campaignId)) {
-        orphaned += 1;
-        continue;
-      }
-      stmt.run({
+  const writes = [];
+  let orphaned = 0;
+  for (const g of groups) {
+    if (!existing.has(g.campaignId)) {
+      orphaned += 1;
+      continue;
+    }
+    writes.push(
+      stmt.bind({
         id: stableId("adg", g.campaignId, g.externalId),
         campaignId: g.campaignId,
         externalId: g.externalId,
         name: g.name,
         status: g.status,
-      });
-      inserted += 1;
-    }
-  });
-  run(groups);
-  return { inserted, orphaned };
+      }),
+    );
+  }
+
+  await db.batch(writes);
+  return { inserted: writes.length, orphaned };
 }
 
 /** Same orphan handling as ad groups above, for ads whose ad group is missing. */
-export function upsertAds(ads: Omit<Ad, "id">[]): { inserted: number; orphaned: number } {
-  const db = getDb();
+export async function upsertAds(ads: Omit<Ad, "id">[]): Promise<{ inserted: number; orphaned: number; }> {
+  const db = getDatabase();
   const stmt = db.prepare(
     `INSERT INTO ads
        (id, ad_group_id, campaign_id, external_id, name, format, status, headline, body, call_to_action, landing_page, preview_url)
@@ -361,26 +383,24 @@ export function upsertAds(ads: Omit<Ad, "id">[]): { inserted: number; orphaned: 
        landing_page   = excluded.landing_page,
        preview_url    = excluded.preview_url`,
   );
-  const hasAdGroup = db.prepare("SELECT 1 FROM ad_groups WHERE id = ?").pluck();
-  let inserted = 0;
-  let orphaned = 0;
+  const existing = await adGroupIdsIn(db, ads.map((a) => a.adGroupId));
 
-  const run = db.transaction((items: Omit<Ad, "id">[]) => {
-    for (const a of items) {
-      if (!hasAdGroup.get(a.adGroupId)) {
-        orphaned += 1;
-        continue;
-      }
-      stmt.run({ ...a, id: stableId("ad", a.adGroupId, a.externalId) });
-      inserted += 1;
+  const writes = [];
+  let orphaned = 0;
+  for (const a of ads) {
+    if (!existing.has(a.adGroupId)) {
+      orphaned += 1;
+      continue;
     }
-  });
-  run(ads);
-  return { inserted, orphaned };
+    writes.push(stmt.bind({ ...a, id: stableId("ad", a.adGroupId, a.externalId) }));
+  }
+
+  await db.batch(writes);
+  return { inserted: writes.length, orphaned };
 }
 
-export function listAds(): Ad[] {
-  const rows = getDb().prepare("SELECT * FROM ads ORDER BY name").all() as Row[];
+export async function listAds(): Promise<Ad[]> {
+  const rows = (await getDatabase().prepare("SELECT * FROM ads ORDER BY name").all()) as Row[];
   return rows.map((row) => ({
     id: row.id as string,
     adGroupId: row.ad_group_id as string,
@@ -397,8 +417,8 @@ export function listAds(): Ad[] {
   }));
 }
 
-export function listAdGroups(): AdGroup[] {
-  const rows = getDb().prepare("SELECT * FROM ad_groups ORDER BY name").all() as Row[];
+export async function listAdGroups(): Promise<AdGroup[]> {
+  const rows = (await getDatabase().prepare("SELECT * FROM ad_groups ORDER BY name").all()) as Row[];
   return rows.map((row) => ({
     id: row.id as string,
     campaignId: row.campaign_id as string,
@@ -410,8 +430,8 @@ export function listAdGroups(): AdGroup[] {
 
 // -------------------------------------------------------------------- metrics
 
-export function upsertMetrics(rows: MetricRow[]): number {
-  const db = getDb();
+export async function upsertMetrics(rows: MetricRow[]): Promise<number> {
+  const db = getDatabase();
   const stmt = db.prepare(
     `INSERT INTO metrics_daily
        (date, connection_id, platform, campaign_external_id, ad_group_external_id, ad_external_id,
@@ -429,23 +449,22 @@ export function upsertMetrics(rows: MetricRow[]): number {
        frequency            = excluded.frequency,
        currency             = excluded.currency`,
   );
-  const run = db.transaction((items: MetricRow[]) => {
-    for (const m of items) {
-      stmt.run({
+  await db.batch(
+    rows.map((m) =>
+      stmt.bind({
         ...m,
         adGroupExternalId: m.adGroupExternalId ?? "",
         adExternalId: m.adExternalId ?? "",
-      });
-    }
-  });
-  run(rows);
+      }),
+    ),
+  );
   return rows.length;
 }
 
-export function queryMetrics(range: DateRange): MetricRow[] {
-  const rows = getDb()
+export async function queryMetrics(range: DateRange): Promise<MetricRow[]> {
+  const rows = (await getDatabase()
     .prepare("SELECT * FROM metrics_daily WHERE date BETWEEN ? AND ? ORDER BY date")
-    .all(range.start, range.end) as Row[];
+    .all([range.start, range.end])) as Row[];
   return rows.map((row) => ({
     date: row.date as string,
     connectionId: row.connection_id as string,
@@ -464,17 +483,17 @@ export function queryMetrics(range: DateRange): MetricRow[] {
   }));
 }
 
-export function metricsDateBounds(): { min: string | null; max: string | null } {
-  const row = getDb()
+export async function metricsDateBounds(): Promise<{ min: string | null; max: string | null; }> {
+  const row = (await getDatabase()
     .prepare("SELECT MIN(date) AS min, MAX(date) AS max FROM metrics_daily")
-    .get() as { min: string | null; max: string | null };
+    .get()) as { min: string | null; max: string | null };
   return row ?? { min: null, max: null };
 }
 
 // ---------------------------------------------------------------------- sales
 
-export function upsertOrders(orders: Omit<SalesOrder, "id">[]): number {
-  const db = getDb();
+export async function upsertOrders(orders: Omit<SalesOrder, "id">[]): Promise<number> {
+  const db = getDatabase();
   const stmt = db.prepare(
     `INSERT INTO sales_orders
        (id, connection_id, platform, external_id, ordered_at, revenue, cogs, currency, customer_ref,
@@ -493,16 +512,15 @@ export function upsertOrders(orders: Omit<SalesOrder, "id">[]): number {
        click_id      = excluded.click_id,
        click_id_type = excluded.click_id_type`,
   );
-  const run = db.transaction((items: Omit<SalesOrder, "id">[]) => {
-    for (const o of items) {
-      stmt.run({
+  const run = db.batch(
+    orders.map((o) =>
+      stmt.bind({
         ...o,
         id: stableId("ord", o.connectionId, o.externalId),
         isNewCustomer: o.isNewCustomer ? 1 : 0,
-      });
-    }
-  });
-  run(orders);
+      }),
+    ),
+  );
   return orders.length;
 }
 
@@ -517,11 +535,10 @@ export function upsertOrders(orders: Omit<SalesOrder, "id">[]): number {
  * for a shop with no store API, and otherwise a second opinion rather than an
  * addition.
  */
-export function revenueSourceKind(): ConnectorKind {
-  const hasStore = getDb()
+export async function revenueSourceKind(): Promise<ConnectorKind> {
+  const hasStore = await getDatabase()
     .prepare("SELECT 1 FROM connections WHERE kind = 'sales' LIMIT 1")
-    .pluck()
-    .get();
+    .pluck();
   return hasStore ? "sales" : "analytics";
 }
 
@@ -530,15 +547,21 @@ export function revenueSourceKind(): ConnectorKind {
  * different one deliberately — comparing the two is the point of connecting
  * both, and that comparison has to ask for each side by name.
  */
-export function queryOrders(range: DateRange, kind: ConnectorKind = revenueSourceKind()): SalesOrder[] {
-  const rows = getDb()
+export async function queryOrders(
+  range: DateRange,
+  kind?: ConnectorKind,
+): Promise<SalesOrder[]> {
+  // Resolved here rather than as a default parameter: the authoritative source
+  // is a query now, and a default cannot await one.
+  const from = kind ?? (await revenueSourceKind());
+  const rows = (await getDatabase()
     .prepare(
       `SELECT o.* FROM sales_orders o
          JOIN connections c ON c.id = o.connection_id
         WHERE c.kind = ? AND date(o.ordered_at) BETWEEN ? AND ?
         ORDER BY o.ordered_at`,
     )
-    .all(kind, range.start, range.end) as Row[];
+    .all([from, range.start, range.end])) as Row[];
   return rows.map((row) => ({
     id: row.id as string,
     connectionId: row.connection_id as string,
@@ -583,8 +606,8 @@ function toRecommendation(row: Row): Recommendation {
   };
 }
 
-export function saveRecommendations(recs: Omit<Recommendation, "id" | "createdAt">[]): void {
-  const db = getDb();
+export async function saveRecommendations(recs: Omit<Recommendation, "id" | "createdAt">[]): Promise<void> {
+  const db = getDatabase();
   const stmt = db.prepare(
     `INSERT INTO recommendations
        (id, created_at, source, scope, target_id, target_name, platform, type, severity, title,
@@ -600,77 +623,76 @@ export function saveRecommendations(recs: Omit<Recommendation, "id" | "createdAt
        confidence              = excluded.confidence,
        evidence                = excluded.evidence`,
   );
-  const run = db.transaction((items: typeof recs) => {
-    for (const r of items) {
-      stmt.run({
+  const run = db.batch(
+    recs.map((r) =>
+      stmt.bind({
         ...r,
         // Same finding on the same target updates in place rather than piling up
         // a new card on every refresh.
         id: stableId("rec", r.source, r.type, r.targetId),
         createdAt: nowISO(),
         evidence: JSON.stringify(r.evidence),
-      });
-    }
-  });
-  run(recs);
+      }),
+    ),
+  );
 }
 
-export function listRecommendations(status?: Recommendation["status"]): Recommendation[] {
-  const db = getDb();
+export async function listRecommendations(status?: Recommendation["status"]): Promise<Recommendation[]> {
+  const db = getDatabase();
   const rows = (
     status
-      ? db
+      ? await db
           .prepare(
             "SELECT * FROM recommendations WHERE status = ? ORDER BY expected_monthly_impact DESC",
           )
-          .all(status)
-      : db
+          .all([status])
+      : await db
           .prepare("SELECT * FROM recommendations ORDER BY expected_monthly_impact DESC")
           .all()
   ) as Row[];
   return rows.map(toRecommendation);
 }
 
-export function setRecommendationStatus(id: string, status: Recommendation["status"]): void {
-  getDb().prepare("UPDATE recommendations SET status = ? WHERE id = ?").run(status, id);
+export async function setRecommendationStatus(id: string, status: Recommendation["status"]): Promise<void> {
+  await getDatabase().prepare("UPDATE recommendations SET status = ? WHERE id = ?").run([status, id]);
 }
 
 /** Drops stale rule findings before a fresh pass writes the current ones. */
-export function clearRecommendations(source: Recommendation["source"]): void {
-  getDb()
+export async function clearRecommendations(source: Recommendation["source"]): Promise<void> {
+  await getDatabase()
     .prepare("DELETE FROM recommendations WHERE source = ? AND status = 'open'")
-    .run(source);
+    .run([source]);
 }
 
 // ------------------------------------------------------------------ sync runs
 
-export function startSyncRun(connectionId: string): string {
+export async function startSyncRun(connectionId: string): Promise<string> {
   const id = newId("sync");
-  getDb()
+  await getDatabase()
     .prepare(
       "INSERT INTO sync_runs (id, connection_id, started_at, status, rows_ingested) VALUES (?, ?, ?, 'running', 0)",
     )
-    .run(id, connectionId, nowISO());
+    .run([id, connectionId, nowISO()]);
   return id;
 }
 
-export function finishSyncRun(
+export async function finishSyncRun(
   id: string,
   status: "success" | "error",
   rowsIngested: number,
   error?: string,
-): void {
-  getDb()
+): Promise<void> {
+  await getDatabase()
     .prepare(
       "UPDATE sync_runs SET finished_at = ?, status = ?, rows_ingested = ?, error = ? WHERE id = ?",
     )
-    .run(nowISO(), status, rowsIngested, error ?? null, id);
+    .run([nowISO(), status, rowsIngested, error ?? null, id]);
 }
 
-export function listSyncRuns(limit = 20): SyncRun[] {
-  const rows = getDb()
+export async function listSyncRuns(limit = 20): Promise<SyncRun[]> {
+  const rows = (await getDatabase()
     .prepare("SELECT * FROM sync_runs ORDER BY started_at DESC LIMIT ?")
-    .all(limit) as Row[];
+    .all([limit])) as Row[];
   return rows.map((row) => ({
     id: row.id as string,
     connectionId: row.connection_id as string,
@@ -684,31 +706,22 @@ export function listSyncRuns(limit = 20): SyncRun[] {
 
 // ------------------------------------------------------------ creative briefs
 
-export function saveCreativeBrief(brief: Omit<CreativeBrief, "id" | "createdAt">): CreativeBrief {
+export async function saveCreativeBrief(brief: Omit<CreativeBrief, "id" | "createdAt">): Promise<CreativeBrief> {
   const id = newId("brief");
   const createdAt = nowISO();
-  getDb()
+  await getDatabase()
     .prepare(
       `INSERT INTO creative_briefs (id, created_at, platform, objective, audience, variants, test_plan, notes)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
     )
-    .run(
-      id,
-      createdAt,
-      brief.platform,
-      brief.objective,
-      brief.audience,
-      JSON.stringify(brief.variants),
-      brief.testPlan,
-      brief.notes ?? null,
-    );
+    .run([id, createdAt, brief.platform, brief.objective, brief.audience, JSON.stringify(brief.variants), brief.testPlan, brief.notes ?? null]);
   return { ...brief, id, createdAt };
 }
 
-export function listCreativeBriefs(limit = 25): CreativeBrief[] {
-  const rows = getDb()
+export async function listCreativeBriefs(limit = 25): Promise<CreativeBrief[]> {
+  const rows = (await getDatabase()
     .prepare("SELECT * FROM creative_briefs ORDER BY created_at DESC LIMIT ?")
-    .all(limit) as Row[];
+    .all([limit])) as Row[];
   return rows.map((row) => ({
     id: row.id as string,
     createdAt: row.created_at as string,
@@ -723,7 +736,7 @@ export function listCreativeBriefs(limit = 25): CreativeBrief[] {
 
 // ----------------------------------------------------------------- action log
 
-export function logAction(entry: {
+export async function logAction(entry: {
   connectionId?: string | null;
   scope: string;
   targetId: string;
@@ -731,29 +744,19 @@ export function logAction(entry: {
   payload?: Record<string, unknown>;
   result: "applied" | "recorded" | "failed";
   detail?: string;
-}): void {
-  getDb()
+}): Promise<void> {
+  await getDatabase()
     .prepare(
       `INSERT INTO action_log (id, created_at, connection_id, scope, target_id, action, payload, result, detail)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     )
-    .run(
-      newId("act"),
-      nowISO(),
-      entry.connectionId ?? null,
-      entry.scope,
-      entry.targetId,
-      entry.action,
-      JSON.stringify(entry.payload ?? {}),
-      entry.result,
-      entry.detail ?? null,
-    );
+    .run([newId("act"), nowISO(), entry.connectionId ?? null, entry.scope, entry.targetId, entry.action, JSON.stringify(entry.payload ?? {}), entry.result, entry.detail ?? null]);
 }
 
-export function listActions(limit = 50) {
-  const rows = getDb()
+export async function listActions(limit = 50) {
+  const rows = (await getDatabase()
     .prepare("SELECT * FROM action_log ORDER BY created_at DESC LIMIT ?")
-    .all(limit) as Row[];
+    .all([limit])) as Row[];
   return rows.map((row) => ({
     id: row.id as string,
     createdAt: row.created_at as string,

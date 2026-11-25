@@ -46,7 +46,7 @@ export interface SqlDatabase {
    * impossible to write by accident — any read a write depends on happens
    * before the batch is assembled.
    */
-  batch(statements: BoundStatement[]): Promise<void>;
+  batch(statements: BoundStatement[]): Promise<{ changes: number }[]>;
   /** Applies DDL. Used by migration only. */
   exec(sql: string): Promise<void>;
 }

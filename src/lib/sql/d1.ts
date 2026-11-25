@@ -27,7 +27,7 @@ export interface D1Like {
       all<T>(): Promise<{ results?: T[] }>;
     };
   };
-  batch(statements: unknown[]): Promise<unknown[]>;
+  batch(statements: unknown[]): Promise<{ meta?: { changes?: number } }[]>;
   exec(sql: string): Promise<unknown>;
 }
 
@@ -76,13 +76,14 @@ export class D1Database implements SqlDatabase {
     return new D1Statement(this.db, sql);
   }
 
-  async batch(statements: BoundStatement[]): Promise<void> {
-    if (statements.length === 0) return;
-    await this.db.batch(
+  async batch(statements: BoundStatement[]): Promise<{ changes: number }[]> {
+    if (statements.length === 0) return [];
+    const results = await this.db.batch(
       statements.map((statement) =>
         this.db.prepare(statement.sql).bind(...normaliseAll(statement.values)),
       ),
     );
+    return results.map((result) => ({ changes: result.meta?.changes ?? 0 }));
   }
 
   async exec(sql: string): Promise<void> {

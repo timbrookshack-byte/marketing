@@ -67,13 +67,13 @@ export class SqliteDatabase implements SqlDatabase {
     return new SqliteStatement(this.db, sql);
   }
 
-  async batch(statements: BoundStatement[]): Promise<void> {
-    const run = this.db.transaction((items: BoundStatement[]) => {
-      for (const item of items) {
-        this.db.prepare(item.sql).run(...(normaliseAll(item.values) as never[]));
-      }
-    });
-    run(statements);
+  async batch(statements: BoundStatement[]): Promise<{ changes: number }[]> {
+    const run = this.db.transaction((items: BoundStatement[]) =>
+      items.map((item) => ({
+        changes: this.db.prepare(item.sql).run(...(normaliseAll(item.values) as never[])).changes,
+      })),
+    );
+    return run(statements);
   }
 
   async exec(sql: string): Promise<void> {
