@@ -21,7 +21,8 @@
     "cf:build": "opennextjs-cloudflare build && tsx scripts/cf-sanitise.ts",
     "cf:preview": "opennextjs-cloudflare preview",
     "cf:deploy": "opennextjs-cloudflare deploy",
-    "cf:schema": "tsx scripts/d1-schema.ts"
+    "cf:schema": "tsx scripts/d1-schema.ts",
+    "cf:secrets": "tsx scripts/cf-secrets.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.125.0",

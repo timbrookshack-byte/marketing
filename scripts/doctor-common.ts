@@ -12,7 +12,17 @@ import { readFileSync } from "node:fs";
 import { getConnector } from "../src/lib/connectors/registry";
 import { getOAuthClient, isExpired, refreshAccessToken } from "../src/lib/connectors/oauth";
 import { CredentialsUnreadableError, findConnectionByPlatform, loadCredentials, saveCredentials } from "../src/lib/repo";
+import { installSqlite } from "../src/lib/sql/node";
 import type { Connection, Credentials, PlatformId } from "../src/lib/types";
+
+/*
+ * The app installs a database driver at startup — Next through instrumentation,
+ * the Worker from its D1 binding. A plain tsx script has neither, so without
+ * this every doctor fails on its first read with "No database has been
+ * installed", which looks like a broken connection rather than a missing
+ * driver.
+ */
+installSqlite();
 
 /**
  * Next.js reads .env for us; a plain tsx script does not, and without
@@ -22,12 +32,26 @@ import type { Connection, Credentials, PlatformId } from "../src/lib/types";
  * the app does not have: a byte order mark from an editor, CRLF line endings, a
  * leading `export`, quoted values, and lower-case names.
  */
-export function loadEnvFile(): { found: boolean; keys: string[]; duplicated: string[] } {
+export interface ParsedEnv {
+  found: boolean;
+  values: Map<string, string>;
+  keys: string[];
+  duplicated: string[];
+}
+
+/**
+ * Parses .env without touching process.env.
+ *
+ * Split out from loadEnvFile so anything needing the values themselves — such
+ * as pushing them to another environment — reads them through exactly these
+ * rules, rather than a second parser that drifts from this one.
+ */
+export function parseEnvFile(file = ".env"): ParsedEnv {
   let contents: string;
   try {
-    contents = readFileSync(".env", "utf8");
+    contents = readFileSync(file, "utf8");
   } catch {
-    return { found: false, keys: [], duplicated: [] };
+    return { found: false, values: new Map(), keys: [], duplicated: [] };
   }
 
   // Last occurrence wins, which is what dotenv and therefore Next.js do: the
@@ -35,7 +59,7 @@ export function loadEnvFile(): { found: boolean; keys: string[]; duplicated: str
   // Taking the first instead is a real difference — a key left blank by the
   // template and set properly further down reads as blank here and correct in
   // the app, and nothing in either output says why they disagree.
-  const parsed = new Map<string, string>();
+  const values = new Map<string, string>();
   const keys: string[] = [];
   const duplicated = new Set<string>();
 
@@ -44,17 +68,24 @@ export function loadEnvFile(): { found: boolean; keys: string[]; duplicated: str
     const match = /^\s*(?:export\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*)$/.exec(line);
     if (!match) continue;
     const [, key, rawValue] = match;
-    if (parsed.has(key)) duplicated.add(key);
+    if (values.has(key)) duplicated.add(key);
     keys.push(key);
-    parsed.set(key, rawValue.trim().replace(/^(["'])(.*)\1$/, "$2"));
+    values.set(key, rawValue.trim().replace(/^(["'])(.*)\1$/, "$2"));
   }
 
+  return { found: true, values, keys, duplicated: [...duplicated] };
+}
+
+export function loadEnvFile(): { found: boolean; keys: string[]; duplicated: string[] } {
+  const parsed = parseEnvFile();
+  if (!parsed.found) return { found: false, keys: [], duplicated: [] };
+
   // A real environment variable still outranks the file, as dotenv has it.
-  for (const [key, value] of parsed) {
+  for (const [key, value] of parsed.values) {
     if (process.env[key] === undefined) process.env[key] = value;
   }
 
-  return { found: true, keys, duplicated: [...duplicated] };
+  return { found: true, keys: parsed.keys, duplicated: parsed.duplicated };
 }
 
 /**
