@@ -775,5 +775,7 @@ export async function listActions(limit = 50) {
     payload: parseJson<Record<string, unknown>>(row.payload, {}),
     result: row.result as string,
     detail: (row.detail as string) ?? null,
+    actor: (row.actor as string) ?? null,
+    proposalId: (row.proposal_id as string) ?? null,
   }));
 }

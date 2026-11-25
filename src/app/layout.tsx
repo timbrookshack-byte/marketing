@@ -14,6 +14,7 @@ const NAV = [
   { href: "/campaigns", label: "Campaigns" },
   { href: "/sales", label: "Sales" },
   { href: "/recommendations", label: "Actions" },
+  { href: "/changes", label: "Changes" },
   { href: "/creative", label: "Creative lab" },
   { href: "/inspiration", label: "Inspiration" },
   { href: "/analyst", label: "Ask" },
