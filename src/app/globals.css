@@ -1,103 +1,75 @@
 @import "tailwindcss";
 
 /*
- * Design tokens. Light values live on bare :root; dark values are redefined
- * under both the OS media query and the explicit [data-theme="dark"] stamp so a
- * manual toggle wins in both directions.
- * Palette: validated categorical order (blue, orange, aqua, yellow, magenta,
- * green, violet, red) — assigned by entity, never by rank.
+ * Design tokens.
+ *
+ * Each token is declared once, with both its values, using light-dark(). The
+ * dark palette used to be a second and third copy of the whole block — one
+ * under the OS media query, one under the explicit stamp — which meant three
+ * places to edit and two chances to forget. They had already drifted: the
+ * status colours were defined in light only, so every "losing money" badge
+ * kept its light-mode colour on a dark background.
+ *
+ * light-dark() follows `color-scheme`, so the two stamps below only have to
+ * set that, and a manual choice still wins over the OS in both directions.
+ *
+ * Categorical order (blue, orange, aqua, yellow, magenta, green, violet, red)
+ * is assigned by entity, never by rank, and both sets pass CVD separation and
+ * contrast against their own surface.
  */
 :root {
-  color-scheme: light;
+  color-scheme: light dark;
 
-  --surface-1: #fcfcfb;
-  --surface-page: #f9f9f7;
-  --surface-sunken: #f2f1ed;
+  --surface-1: light-dark(#fcfcfb, #1a1a19);
+  --surface-page: light-dark(#f9f9f7, #0d0d0d);
+  --surface-sunken: light-dark(#f2f1ed, #131312);
 
-  --text-primary: #0b0b0b;
-  --text-secondary: #52514e;
-  --text-muted: #898781;
+  --text-primary: light-dark(#0b0b0b, #ffffff);
+  --text-secondary: light-dark(#52514e, #c3c2b7);
+  --text-muted: light-dark(#898781, #898781);
 
-  --grid: #e1e0d9;
-  --axis: #c3c2b7;
-  --border: rgba(11, 11, 11, 0.1);
+  --grid: light-dark(#e1e0d9, #2c2c2a);
+  --axis: light-dark(#c3c2b7, #383835);
+  --border: light-dark(rgba(11, 11, 11, 0.1), rgba(255, 255, 255, 0.1));
 
-  --series-1: #2a78d6;
-  --series-2: #eb6834;
-  --series-3: #1baf7a;
-  --series-4: #eda100;
-  --series-5: #e87ba4;
-  --series-6: #008300;
-  --series-7: #4a3aa7;
-  --series-8: #e34948;
+  --series-1: light-dark(#2a78d6, #3987e5);
+  --series-2: light-dark(#eb6834, #d95926);
+  --series-3: light-dark(#1baf7a, #199e70);
+  --series-4: light-dark(#eda100, #c98500);
+  --series-5: light-dark(#e87ba4, #d55181);
+  --series-6: light-dark(#008300, #008300);
+  --series-7: light-dark(#4a3aa7, #9085e9);
+  --series-8: light-dark(#e34948, #e66767);
 
-  --status-good: #0ca30c;
-  --status-warning: #fab219;
-  --status-serious: #ec835a;
-  --status-critical: #d03b3b;
-  --delta-up: #006300;
+  /*
+   * Status colours are read as text — a badge, a claim ratio, a ROAS that has
+   * gone wrong — so each value is the one that clears 4.5:1 against its own
+   * surface rather than the one that looks right on white. The light amber was
+   * 1.79:1, which is how "below target return" came to be almost unreadable on
+   * the campaigns table.
+   */
+  --status-good: light-dark(#0a870a, #0ca30c);
+  --status-warning: light-dark(#986d0f, #fab219);
+  --status-serious: light-dark(#ac6042, #ec835a);
+  --status-critical: light-dark(#d03b3b, #d75858);
+  --delta-up: light-dark(#006300, #0ca30c);
 
-  --seq-100: #cde2fb;
-  --seq-250: #86b6ef;
-  --seq-400: #3987e5;
-  --seq-550: #1c5cab;
-  --seq-700: #0d366b;
+  /* Sequential: magnitude runs light-to-dark on a light surface and the other
+     way on a dark one, so the heavy end is always the one that stands out. */
+  --seq-100: light-dark(#cde2fb, #14355e);
+  --seq-250: light-dark(#86b6ef, #1c5cab);
+  --seq-400: light-dark(#3987e5, #3987e5);
+  --seq-550: light-dark(#1c5cab, #86b6ef);
+  --seq-700: light-dark(#0d366b, #cde2fb);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root:not([data-theme="light"]) {
-    color-scheme: dark;
-
-    --surface-1: #1a1a19;
-    --surface-page: #0d0d0d;
-    --surface-sunken: #131312;
-
-    --text-primary: #ffffff;
-    --text-secondary: #c3c2b7;
-    --text-muted: #898781;
-
-    --grid: #2c2c2a;
-    --axis: #383835;
-    --border: rgba(255, 255, 255, 0.1);
-
-    --series-1: #3987e5;
-    --series-2: #d95926;
-    --series-3: #199e70;
-    --series-4: #c98500;
-    --series-5: #d55181;
-    --series-6: #008300;
-    --series-7: #9085e9;
-    --series-8: #e66767;
-
-    --delta-up: #0ca30c;
-  }
+/* The manual override only has to pick a scheme; every token follows. */
+:root[data-theme="light"] {
+  color-scheme: light;
 }
 
 :root[data-theme="dark"] {
   color-scheme: dark;
-
-  --surface-1: #1a1a19;
-  --surface-page: #0d0d0d;
-  --surface-sunken: #131312;
-
-  --text-primary: #ffffff;
-  --text-secondary: #c3c2b7;
-  --text-muted: #898781;
-
-  --grid: #2c2c2a;
-  --axis: #383835;
-  --border: rgba(255, 255, 255, 0.1);
-
-  --series-1: #3987e5;
-  --series-2: #d95926;
-  --series-3: #199e70;
-  --series-4: #c98500;
-  --series-5: #d55181;
-  --series-6: #008300;
-  --series-7: #9085e9;
-  --series-8: #e66767;
-
-  --delta-up: #0ca30c;
 }
 
 @theme inline {
@@ -120,6 +92,8 @@ body {
   background: var(--surface-page);
   color: var(--text-primary);
   font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+  /* Stops iOS inflating text in landscape, which breaks table column widths. */
+  -webkit-text-size-adjust: 100%;
 }
 
 /* Columns that must align vertically get tabular figures; standalone hero
@@ -140,4 +114,32 @@ body {
 
 ::selection {
   background: color-mix(in srgb, var(--series-1) 28%, transparent);
+}
+
+/* Checkboxes, radios and range inputs otherwise render in the browser's own
+   blue, which is the one saturated colour on an otherwise restrained page. */
+input[type="checkbox"],
+input[type="radio"],
+input[type="range"],
+progress {
+  accent-color: var(--text-primary);
+}
+
+/* Anything focused by keyboard gets a visible ring, including inside cards
+   where the default outline would sit on a same-coloured surface. */
+:where(a, button, input, select, textarea, [tabindex]):focus-visible {
+  outline: 2px solid var(--series-1);
+  outline-offset: 2px;
+  border-radius: 6px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
 }

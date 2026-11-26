@@ -1,6 +1,6 @@
 import { buildSnapshot, breakEvenRoas } from "@/lib/analytics";
 import { channelColor, platformLabel } from "@/lib/connectors/registry";
-import { formatCompactCurrency, formatNumber, formatPercent, safeDiv } from "@/lib/util";
+import { formatCompactCurrency, formatNumber, formatPercent, objectiveLabel, safeDiv } from "@/lib/util";
 import { Sparkline } from "@/components/charts";
 import {
   Card,
@@ -97,9 +97,14 @@ export default async function CampaignsPage() {
                             </span>
                           ) : null}
                         </span>
-                        <span className="text-[11px] text-[var(--text-muted)]">
+                        <span
+                          className="text-[11px] text-[var(--text-muted)]"
+                          title={item.campaign.objective ?? undefined}
+                        >
                           {platformLabel(item.campaign.platform)}
-                          {item.campaign.objective ? ` · ${item.campaign.objective}` : ""}
+                          {item.campaign.objective
+                            ? ` · ${objectiveLabel(item.campaign.objective)}`
+                            : ""}
                         </span>
                         {flag ? (
                           <span className="mt-0.5">

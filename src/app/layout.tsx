@@ -31,12 +31,20 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
               <span className="text-[17px] font-semibold tracking-tight">360 Marketing</span>
               <span className="text-[12px] text-[var(--text-muted)]">spend · sales · signal</span>
             </Link>
-            <nav className="-mx-1 flex flex-1 flex-wrap items-center gap-x-1 gap-y-1">
+            {/*
+              * One scrolling row on a phone rather than a wrapped block.
+              * Ten links stacked vertically filled the whole first screen, so
+              * every page opened on its own navigation and the content began
+              * below the fold. Scrolling sideways keeps every link reachable
+              * without a menu to open, and the row wraps normally once there
+              * is width for it.
+              */}
+            <nav className="-mx-4 flex flex-1 items-center gap-x-1 gap-y-1 overflow-x-auto px-4 [scrollbar-width:none] sm:mx-0 sm:flex-wrap sm:overflow-visible sm:px-0 [&::-webkit-scrollbar]:hidden">
               {NAV.map((item) => (
                 <Link
                   key={item.href}
                   href={item.href}
-                  className="rounded-lg px-2.5 py-1.5 text-[13px] text-[var(--text-secondary)] transition-colors hover:bg-[var(--surface-sunken)] hover:text-[var(--text-primary)]"
+                  className="shrink-0 whitespace-nowrap rounded-lg px-2.5 py-1.5 text-[13px] text-[var(--text-secondary)] transition-colors hover:bg-[var(--surface-sunken)] hover:text-[var(--text-primary)]"
                 >
                   {item.label}
                 </Link>

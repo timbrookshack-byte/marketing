@@ -80,13 +80,51 @@ export function formatCurrency(value: number, currency = "USD", maximumFractionD
   }).format(Number.isFinite(value) ? value : 0);
 }
 
+/**
+ * Money, shortened once it gets long.
+ *
+ * The shortening is done here rather than by Intl's compact notation, which is
+ * not portable between engines even with the locale pinned: Node renders
+ * 15,000 as "$15.0K" and Chrome as "$15K". Since this runs on the server and
+ * then again in the browser, that disagreement surfaces as a React hydration
+ * error on every page showing a compact figure that lands on a whole thousand,
+ * and the tree gets thrown away and re-rendered.
+ *
+ * Intl still formats the number itself, so the currency symbol, the grouping
+ * and the negative sign stay correct for the currency given. Only the choice
+ * of suffix and decimal place is ours.
+ */
 export function formatCompactCurrency(value: number, currency = "USD"): string {
-  return new Intl.NumberFormat("en-US", {
-    style: "currency",
-    currency,
-    notation: Math.abs(value) >= 10_000 ? "compact" : "standard",
-    maximumFractionDigits: Math.abs(value) >= 10_000 ? 1 : 0,
-  }).format(Number.isFinite(value) ? value : 0);
+  const safe = Number.isFinite(value) ? value : 0;
+  const magnitude = Math.abs(safe);
+
+  if (magnitude < 10_000) {
+    return new Intl.NumberFormat("en-US", {
+      style: "currency",
+      currency,
+      maximumFractionDigits: 0,
+    }).format(safe);
+  }
+
+  const [divisor, suffix] =
+    magnitude >= 1_000_000_000
+      ? [1_000_000_000, "B"]
+      : magnitude >= 1_000_000
+        ? [1_000_000, "M"]
+        : [1_000, "K"];
+
+  const scaled = safe / divisor;
+  // One decimal while the mantissa is small enough for it to mean something.
+  const digits = Math.abs(scaled) < 100 ? 1 : 0;
+
+  return (
+    new Intl.NumberFormat("en-US", {
+      style: "currency",
+      currency,
+      minimumFractionDigits: 0,
+      maximumFractionDigits: digits,
+    }).format(Number(scaled.toFixed(digits))) + suffix
+  );
 }
 
 export function formatNumber(value: number, maximumFractionDigits = 0): string {
@@ -132,4 +170,50 @@ export function mulberry32(seed: number): () => number {
     t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
     return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
   };
+}
+
+/**
+ * A campaign objective in words rather than in the platform's constant.
+ *
+ * Meta returns OUTCOME_SALES and Google returns PERFORMANCE_MAX; neither is
+ * written for the person reading a table, and on a phone the long ones wrap
+ * into two lines of shouting. The original is kept where the exact value
+ * matters -- it goes in the title attribute -- and anything unrecognised falls
+ * back to a tidied version of itself rather than being dropped.
+ */
+export function objectiveLabel(objective: string | null | undefined): string {
+  if (!objective) return "";
+
+  const known: Record<string, string> = {
+    OUTCOME_SALES: "Sales",
+    OUTCOME_AWARENESS: "Awareness",
+    OUTCOME_TRAFFIC: "Traffic",
+    OUTCOME_LEADS: "Leads",
+    OUTCOME_ENGAGEMENT: "Engagement",
+    OUTCOME_APP_PROMOTION: "App promotion",
+    CATALOG_SALES: "Catalogue sales",
+    LEAD_GENERATION: "Lead generation",
+    LINK_CLICKS: "Link clicks",
+    CONVERSIONS: "Conversions",
+    PERFORMANCE_MAX: "Performance Max",
+    SHOPPING: "Shopping",
+    SEARCH: "Search",
+    DISPLAY: "Display",
+    VIDEO: "Video",
+    SMART: "Smart",
+    DEMAND_GEN: "Demand Gen",
+    MULTI_CHANNEL: "Multi-channel",
+  };
+
+  const upper = objective.toUpperCase();
+  if (known[upper]) return known[upper];
+
+  // Unknown constants still read better without the underscores.
+  const words = upper.replace(/^OUTCOME_/, "").split("_").filter(Boolean);
+  if (words.length === 0) return objective;
+  return words
+    .map((word, index) =>
+      index === 0 ? word.charAt(0) + word.slice(1).toLowerCase() : word.toLowerCase(),
+    )
+    .join(" ");
 }

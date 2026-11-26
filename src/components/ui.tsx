@@ -95,7 +95,10 @@ export function SeverityBadge({ severity, children }: { severity: Severity; chil
   const style = SEVERITY_STYLE[severity] ?? SEVERITY_STYLE.neutral;
   return (
     <span
-      className="inline-flex items-center gap-1.5 rounded-full border px-2 py-0.5 text-[11px] font-medium hairline"
+      /* items-start and a softer radius so a badge whose text wraps still
+         looks like a badge: a pill with two lines in it bulges oddly and the
+         icon drifts to the vertical centre, away from the first line. */
+      className="inline-flex items-start gap-1.5 rounded-lg border px-2 py-0.5 text-[11px] font-medium leading-[1.45] hairline"
       style={{ color: style.color }}
     >
       <span aria-hidden>{style.icon}</span>
