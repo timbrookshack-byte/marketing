@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" role="img" aria-label="360 Marketing">
+  <!--
+    A tab icon is read at 16 pixels, so it carries three shapes and two
+    colours and nothing else. Ascending bars say "performance over time"
+    without needing to be recognised as any particular chart.
+
+    The plate is solid rather than transparent because a browser tab strip is
+    near-white in one theme and near-black in the other, and a glyph that
+    relies on the page behind it disappears in whichever one it was not drawn
+    for. A dark plate reads on both.
+
+    The tallest bar carries the accent blue: at this size one coloured element
+    is the most that stays legible, and putting it on the tallest bar means
+    the eye lands on the end of the trend.
+  -->
+  <rect width="32" height="32" rx="7.5" fill="#0b0b0b" />
+  <rect x="7" y="18" width="4.5" height="7" rx="1.6" fill="#fcfcfb" fill-opacity="0.62" />
+  <rect x="13.75" y="14" width="4.5" height="11" rx="1.6" fill="#fcfcfb" fill-opacity="0.82" />
+  <rect x="20.5" y="8" width="4.5" height="17" rx="1.6" fill="#3987e5" />
+</svg>
