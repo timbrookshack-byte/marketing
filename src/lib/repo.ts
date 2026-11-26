@@ -516,7 +516,10 @@ export async function upsertOrders(orders: Omit<SalesOrder, "id">[]): Promise<nu
        click_id      = excluded.click_id,
        click_id_type = excluded.click_id_type`,
   );
-  const run = db.batch(
+  // Awaited. This was fired without awaiting, which was harmless while the
+  // driver was synchronous and a race once it was not: a sync could report
+  // the orders written before they were.
+  await db.batch(
     orders.map((o) =>
       stmt.bind({
         ...o,
@@ -525,7 +528,64 @@ export async function upsertOrders(orders: Omit<SalesOrder, "id">[]): Promise<nu
       }),
     ),
   );
+
+  await replaceTouchpoints(orders);
   return orders.length;
+}
+
+/**
+ * Rewrites the stored journey for every order that came with one.
+ *
+ * Replaced rather than merged: a re-sync returns the journey as it stands now,
+ * and a journey that has gained a visit should not end up as two overlapping
+ * copies. Orders whose connector reports no journeys at all are skipped
+ * entirely, so a Shopify fallback to last-visit attribution does not quietly
+ * delete journeys an earlier, better sync had stored.
+ *
+ * Written in chunks because a batch is one request: a hundred orders with
+ * twenty-five visits each is far more statements than belongs in one.
+ */
+async function replaceTouchpoints(orders: Omit<SalesOrder, "id">[]): Promise<void> {
+  const db = getDatabase();
+  const withJourney = orders.filter((o) => o.touchpoints !== undefined);
+  if (withJourney.length === 0) return;
+
+  const remove = db.prepare("DELETE FROM order_touchpoints WHERE order_id = ?");
+  const insert = db.prepare(
+    `INSERT INTO order_touchpoints
+       (order_id, position, occurred_at, source, medium, campaign, content, term, referrer,
+        landing_page, click_id, click_id_type)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+  );
+
+  const statements: ReturnType<typeof insert.bind>[] = [];
+  for (const order of withJourney) {
+    const orderId = stableId("ord", order.connectionId, order.externalId);
+    statements.push(remove.bind([orderId]));
+    for (const point of order.touchpoints ?? []) {
+      statements.push(
+        insert.bind([
+          orderId,
+          point.position,
+          point.occurredAt,
+          point.source,
+          point.medium,
+          point.campaign,
+          point.content,
+          point.term,
+          point.referrer,
+          point.landingPage,
+          point.clickId,
+          point.clickIdType,
+        ]),
+      );
+    }
+  }
+
+  const CHUNK = 200;
+  for (let i = 0; i < statements.length; i += CHUNK) {
+    await db.batch(statements.slice(i, i + CHUNK));
+  }
 }
 
 /**

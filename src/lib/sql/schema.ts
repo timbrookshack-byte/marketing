@@ -229,6 +229,45 @@ export const SCHEMA = `
     CREATE INDEX IF NOT EXISTS idx_proposals_target
       ON change_proposals (target_id, created_at);
 
+    /*
+     * Every visit on the way to an order, not just the one that got the credit.
+     *
+     * The connector already asks Shopify for the whole customer journey -- the
+     * first visit, the last, and the moments between -- and then collapses it
+     * to a single attributing visit before saving. That is the right answer
+     * for "which campaign gets this sale", and it is the wrong answer for
+     * every other question: an awareness campaign's job is to be someone's
+     * first touch, and last-click attribution hands that credit to whatever
+     * they searched three weeks later. Judged on last click, a campaign doing
+     * its job perfectly reads as zero return.
+     *
+     * Position is the visit's place in the journey, counting from 1, so first
+     * and last touch are just the ends of the list and the middle is intact.
+     * The ordering comes from Shopify rather than from us: occurred_at can be
+     * missing, and sorting by a null would silently reorder a journey.
+     *
+     * Keyed on (order_id, position) so a re-sync of the same order replaces
+     * its journey rather than appending a second copy of it.
+     */
+    CREATE TABLE IF NOT EXISTS order_touchpoints (
+      order_id     TEXT NOT NULL REFERENCES sales_orders(id) ON DELETE CASCADE,
+      position     INTEGER NOT NULL,
+      occurred_at  TEXT,
+      source       TEXT,
+      medium       TEXT,
+      campaign     TEXT,
+      content      TEXT,
+      term         TEXT,
+      referrer     TEXT,
+      landing_page TEXT,
+      click_id     TEXT,
+      click_id_type TEXT,
+      PRIMARY KEY (order_id, position)
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_touchpoints_source
+      ON order_touchpoints (source, medium);
+
     CREATE TABLE IF NOT EXISTS settings (
       key   TEXT PRIMARY KEY,
       value TEXT NOT NULL

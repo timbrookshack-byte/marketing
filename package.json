@@ -27,7 +27,9 @@
     "test:proposals": "tsx scripts/test-proposals.ts",
     "test:mcp": "tsx scripts/test-mcp.ts",
     "cf:deploy:only": "opennextjs-cloudflare deploy",
-    "test:scatter": "tsx scripts/test-scatter.tsx"
+    "test:scatter": "tsx scripts/test-scatter.tsx",
+    "test:touchpoints": "tsx scripts/test-touchpoints.ts",
+    "cf:migrate": "tsx scripts/cf-migrate.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.125.0",

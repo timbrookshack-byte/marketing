@@ -134,6 +134,28 @@ export interface MetricRow {
 }
 
 /** A real order or payment pulled from a store / billing system. */
+/**
+ * One visit on the way to an order.
+ *
+ * Stored for every visit in the journey, not just the one credited with the
+ * sale, so the portal can answer where people first meet the brand as well as
+ * what closed them.
+ */
+export interface Touchpoint {
+  /** Place in the journey, from 1. Position 1 is the first touch. */
+  position: number;
+  occurredAt: string | null;
+  source: string | null;
+  medium: string | null;
+  campaign: string | null;
+  content: string | null;
+  term: string | null;
+  referrer: string | null;
+  landingPage: string | null;
+  clickId: string | null;
+  clickIdType: string | null;
+}
+
 export interface SalesOrder {
   id: string;
   connectionId: string;
@@ -155,6 +177,12 @@ export interface SalesOrder {
   /** Platform click identifiers — the strongest attribution signal we get. */
   clickId: string | null;
   clickIdType: string | null;
+  /**
+   * The whole journey, when the source exposes it. Absent rather than empty
+   * when a connector does not report journeys at all, so "no touchpoints" and
+   * "not asked for" stay distinguishable.
+   */
+  touchpoints?: Touchpoint[];
 }
 
 export type RecommendationScope = "channel" | "campaign" | "adgroup" | "ad" | "portfolio";

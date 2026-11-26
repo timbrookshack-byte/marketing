@@ -1,6 +1,6 @@
 import { ConnectorError, bearer, request } from "./http";
 import type { ConnectorContext, SalesConnector } from "./types";
-import type { DateRange, SalesOrder } from "../types";
+import type { DateRange, SalesOrder, Touchpoint } from "../types";
 
 /**
  * Revenue-side connectors. These are what turn "we spent $40k" into "we spent
@@ -195,6 +195,94 @@ export function chooseAttributingVisit(
   if (withCampaign) return withCampaign;
 
   return journey?.lastVisit ?? journey?.firstVisit ?? { landingPage: fallbackLandingPage };
+}
+
+/**
+ * The whole journey, in order, as rows worth storing.
+ *
+ * chooseAttributingVisit answers "who gets the credit" and deliberately
+ * discards everything else. This keeps the rest, because the discarded part is
+ * what says where people first meet the brand -- the question last-click
+ * attribution cannot answer by construction.
+ *
+ * Shopify returns the same visit in more than one place: firstVisit and
+ * lastVisit are usually also moments. They are deduplicated on when-and-where
+ * rather than on object identity, since they arrive as separate objects.
+ *
+ * Visits with no timestamp keep the order Shopify gave them rather than being
+ * sorted to one end, because a null is not a time and pretending it sorts
+ * silently rewrites the journey.
+ */
+export function journeyTouchpoints(
+  journey: CustomerJourney | undefined,
+  fallbackLandingPage?: string,
+): Touchpoint[] {
+  const all = [
+    ...(journey?.firstVisit ? [journey.firstVisit] : []),
+    ...momentsOf(journey),
+    ...(journey?.lastVisit ? [journey.lastVisit] : []),
+  ].filter((visit) => visit.landingPage || visit.utmParameters);
+
+  if (all.length === 0) {
+    // No journey at all: the landing page on the order is the one thing known.
+    if (!fallbackLandingPage) return [];
+    const parsed = parseLandingPage(fallbackLandingPage);
+    return [
+      {
+        position: 1,
+        occurredAt: null,
+        source: parsed.utmSource ?? null,
+        medium: parsed.utmMedium ?? null,
+        campaign: parsed.utmCampaign ?? null,
+        content: parsed.utmContent ?? null,
+        term: parsed.utmTerm ?? null,
+        referrer: null,
+        landingPage: parsed.landingPage ?? null,
+        clickId: parsed.clickId ?? null,
+        clickIdType: parsed.clickIdType ?? null,
+      },
+    ];
+  }
+
+  const seen = new Set<string>();
+  const unique = all.filter((visit) => {
+    const key = `${visit.occurredAt ?? ""}|${visit.landingPage ?? ""}|${visit.source ?? ""}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+
+  // Sorted oldest first where timestamps exist, so position 1 is the first
+  // touch. Where they do not, the given order stands.
+  const dated = unique.filter((v) => v.occurredAt);
+  const undated = unique.filter((v) => !v.occurredAt);
+  dated.sort((a, b) => (a.occurredAt ?? "").localeCompare(b.occurredAt ?? ""));
+
+  return [...dated, ...undated].map((visit, index) => {
+    const parsed = parseLandingPage(visit.landingPage);
+    const utm = visit.utmParameters;
+    return {
+      position: index + 1,
+      occurredAt: visit.occurredAt ?? null,
+      source: utm?.source ?? parsed.utmSource ?? visit.source ?? null,
+      medium: utm?.medium ?? parsed.utmMedium ?? visit.sourceType ?? null,
+      campaign: utm?.campaign ?? parsed.utmCampaign ?? null,
+      content: utm?.content ?? parsed.utmContent ?? null,
+      term: utm?.term ?? parsed.utmTerm ?? null,
+      /*
+       * Not requested from Shopify. referrerUrl exists on CustomerVisit, but
+       * these fields are shared with lastVisit, which is asked for on every
+       * sync whether or not the journey is available -- so a field this API
+       * version rejects would stop orders being fetched at all, not just the
+       * journey. The column is there for when that is worth confirming
+       * against a live shop.
+       */
+      referrer: null,
+      landingPage: parsed.landingPage ?? visit.landingPage ?? null,
+      clickId: parsed.clickId ?? null,
+      clickIdType: parsed.clickIdType ?? null,
+    };
+  });
 }
 
 // --------------------------------------------------------------------- Shopify
@@ -500,6 +588,12 @@ export const shopifyConnector: SalesConnector = {
           utmTerm: stamped.utmTerm ?? utm?.term ?? parsed.utmTerm ?? null,
           clickId: stamped.clickId ?? parsed.clickId ?? null,
           clickIdType: stamped.clickIdType ?? parsed.clickIdType ?? null,
+          /*
+           * The journey as well as the verdict. chooseAttributingVisit above
+           * decides who gets the credit; this keeps the rest, which is the
+           * only record of where someone first met the brand.
+           */
+          touchpoints: journeyTouchpoints(journey, node.landingPageUrl as string | undefined),
         });
       }
 
