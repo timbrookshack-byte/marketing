@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { buildSnapshot, breakEvenRoas, trend } from "@/lib/analytics";
 import { channelColor, platformLabel } from "@/lib/connectors/registry";
-import { listConnections } from "@/lib/repo";
+import { listConnections, metricsDateBounds } from "@/lib/repo";
 import {
   formatCompactCurrency,
   formatCurrency,
@@ -11,10 +11,22 @@ import {
 } from "@/lib/util";
 import { ChannelBars, TimeSeriesChart } from "@/components/charts";
 import { Card, EmptyState, Money, PrimaryLink, SeverityBadge, StatTile } from "@/components/ui";
+import { RangePicker } from "@/components/range-picker";
+import { loadSettings } from "@/lib/analytics";
+import { daysBetween, PRESET_LABELS, rangeFromParams } from "@/lib/dates";
 
 export const dynamic = "force-dynamic";
 
-export default async function OverviewPage() {
+/*
+ * The period comes from the query string rather than component state, so a
+ * window worth returning to can be bookmarked or sent to someone and survives
+ * a refresh. searchParams is a promise in this version of Next.
+ */
+export default async function OverviewPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ range?: string; from?: string; to?: string }>;
+}) {
   const connections = await listConnections();
 
   if (connections.length === 0) {
@@ -27,9 +39,29 @@ export default async function OverviewPage() {
     );
   }
 
-  const snapshot = await buildSnapshot(30);
+  const params = await searchParams;
+  const settingsForRange = await loadSettings();
+  const { range, preset } = rangeFromParams(params, settingsForRange.timezone);
+  const snapshot = await buildSnapshot(daysBetween(range), range);
 
   if (snapshot.isEmpty) {
+    /*
+     * Two different nothings, and telling someone the wrong one wastes their
+     * time. Before the period was selectable there was only one: nothing had
+     * been synced. Now an empty page usually means the chosen window has no
+     * data in it -- "today", asked before the day's sync -- and sending
+     * someone to run a sync they have already run is worse than useless.
+     */
+    const bounds = await metricsDateBounds();
+    if (bounds.max) {
+      return (
+        <EmptyState
+          title="Nothing in this period"
+          body={`There is no spend recorded between ${snapshot.range.start} and ${snapshot.range.end}. Data runs from ${bounds.min} to ${bounds.max} — pick a wider period, or sync if today's figures have not landed yet.`}
+          action={<PrimaryLink href="/?range=last_30">Back to the last 30 days</PrimaryLink>}
+        />
+      );
+    }
     return (
       <EmptyState
         title="Connected, but no data yet"
@@ -63,12 +95,20 @@ export default async function OverviewPage() {
 
   return (
     <div className="flex flex-col gap-6">
-      <div>
-        <h1 className="text-[22px] font-semibold tracking-tight">Where the money went</h1>
-        <p className="mt-1 text-[13px] text-[var(--text-secondary)]">
-          {windowDays} days to {snapshot.range.end} · {channels.length} channels ·{" "}
-          {formatNumber(portfolio.totals.attributedOrders)} attributed orders
-        </p>
+      <div className="flex flex-col gap-3">
+        <div>
+          <h1 className="text-[22px] font-semibold tracking-tight">Where the money went</h1>
+          <p className="mt-1 text-[13px] text-[var(--text-secondary)]">
+            {preset === "custom"
+              ? `${snapshot.range.start} to ${snapshot.range.end}`
+              : PRESET_LABELS[preset]}
+            {" · "}
+            {windowDays === 1 ? "1 day" : `${windowDays} days`} to {snapshot.range.end} ·{" "}
+            {channels.length} channels ·{" "}
+            {formatNumber(portfolio.totals.attributedOrders)} attributed orders
+          </p>
+        </div>
+        <RangePicker preset={preset} start={snapshot.range.start} end={snapshot.range.end} />
       </div>
 
       {/* The five numbers that decide whether anything else matters. */}

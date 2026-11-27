@@ -68,6 +68,16 @@ export interface AnalysisSettings {
   /** Spend below this in the window is too small to be worth an action. */
   minSpendForAction: number;
   currency: string;
+  /**
+   * The business's own timezone, as an IANA name.
+   *
+   * A Worker runs in UTC, so without this "today" is computed in UTC and a
+   * shop in Queensland sees yesterday's figures until ten in the morning --
+   * which is exactly when someone looks. Everything stored stays UTC; this
+   * only decides which calendar day a preset like "today" or "this month"
+   * means.
+   */
+  timezone: string;
 }
 
 export const DEFAULT_SETTINGS: AnalysisSettings = {
@@ -77,6 +87,7 @@ export const DEFAULT_SETTINGS: AnalysisSettings = {
   minOrdersForConfidence: 8,
   minSpendForAction: 250,
   currency: "USD",
+  timezone: "Australia/Brisbane",
 };
 
 export function emptyTotals(): Totals {
